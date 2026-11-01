@@ -1,10 +1,11 @@
 /**
- * Beatz Control — Renderer Logic
- * Microsoft Phone Link Fluent UI Controller with Smooth Window Animations & Theme Switching
+ * Beatz Control — Live Fluent UI Renderer Controller
+ * Wires real Socket.IO Cloud Relay connection, native Windows hardware integration,
+ * theme switching, and smooth window animations.
  */
 
 (function () {
-  // ─── 1. Window Animations & Controls (Minimize, Maximize, Close) ────────────
+  // ─── 1. Window Controls & Smooth Animations ────────────────────────────────
   const btnMinimize = document.getElementById('btnMinimize');
   const btnMaximize = document.getElementById('btnMaximize');
   const btnClose = document.getElementById('btnClose');
@@ -16,7 +17,6 @@
       document.body.classList.add('window-animating-minimize');
       setTimeout(() => {
         window.beatzAPI?.minimize();
-        // Clear minimize class so when restored the window is visible and plays restore anim
         setTimeout(() => {
           document.body.classList.remove('window-animating-minimize');
         }, 100);
@@ -43,7 +43,7 @@
     });
   }
 
-  // Restore animation when window regains focus or visibility
+  // Restore animation when window regains focus
   window.addEventListener('focus', () => {
     document.body.classList.remove('window-animating-minimize');
     document.body.classList.add('window-animating-restore');
@@ -52,7 +52,6 @@
     }, 250);
   });
 
-  // Maximize Icon synchronization
   if (window.beatzAPI?.onMaxChanged) {
     window.beatzAPI.onMaxChanged((isMax) => {
       if (!maxIcon) return;
@@ -69,7 +68,7 @@
     });
   }
 
-  // ─── 2. Dark Mode / Light Mode Theme Switching ─────────────────────────────
+  // ─── 2. Dark / Light Mode Theme System ─────────────────────────────────────
   const themeButtons = {
     dark: document.getElementById('btnThemeDark'),
     light: document.getElementById('btnThemeLight'),
@@ -87,33 +86,24 @@
     document.documentElement.setAttribute('data-theme', effectiveTheme);
     localStorage.setItem('beatz-theme', themeChoice);
 
-    // Update active button state
     Object.entries(themeButtons).forEach(([key, btn]) => {
       if (btn) btn.classList.toggle('active', key === themeChoice);
     });
 
-    // Notify Electron main process for native titlebar & window chrome
     if (window.beatzAPI?.setTheme) {
       window.beatzAPI.setTheme(themeChoice);
     }
   }
 
-  // Bind theme buttons
   Object.entries(themeButtons).forEach(([key, btn]) => {
-    if (btn) {
-      btn.addEventListener('click', () => applyTheme(key));
-    }
+    if (btn) btn.addEventListener('click', () => applyTheme(key));
   });
 
-  // Listen to system preference changes when in 'system' mode
   prefersDarkMediaQuery.addEventListener('change', () => {
     const saved = localStorage.getItem('beatz-theme') || 'system';
-    if (saved === 'system') {
-      applyTheme('system');
-    }
+    if (saved === 'system') applyTheme('system');
   });
 
-  // Initialize theme on load
   const initialTheme = localStorage.getItem('beatz-theme') || 'dark';
   applyTheme(initialTheme);
 
@@ -140,7 +130,7 @@
     });
   });
 
-  // ─── 4. UI Elements & State ───────────────────────────────────────────────
+  // ─── 4. Live UI State Elements ─────────────────────────────────────────────
   const badgeAutostart = document.getElementById('badgeAutostart');
   const bannerAutostart = document.getElementById('bannerAutostart');
   const txtStartupModeBar = document.getElementById('txtStartupModeBar');
@@ -176,9 +166,6 @@
   const btnHotspot = document.getElementById('btnHotspot');
   const btnFirewall = document.getElementById('btnFirewall');
 
-  let packetCount = 0;
-  const DEFAULT_RELAY_URL = 'https://backend-n4yg.onrender.com';
-
   function log(msg) {
     if (!logPane) return;
     const time = new Date().toLocaleTimeString();
@@ -188,11 +175,9 @@
     logPane.scrollTop = logPane.scrollHeight;
   }
 
-  // Initial values
-  if (txtPcName) txtPcName.textContent = window.navigator.platform || 'Windows PC';
-  if (txtResolution) txtResolution.textContent = `${window.screen.width} × ${window.screen.height}`;
-  if (txtRelayUrl) txtRelayUrl.textContent = DEFAULT_RELAY_URL;
-  if (txtRelayUrlInput) txtRelayUrlInput.value = DEFAULT_RELAY_URL;
+  if (txtResolution) {
+    txtResolution.textContent = `${window.screen.width} × ${window.screen.height}`;
+  }
 
   // Autostart indicator detection
   if (window.beatzAPI?.isAutostart) {
@@ -246,93 +231,136 @@
 
   initAutoLaunch();
 
-  // ─── 5. Simulated / Real Relay Handshake ──────────────────────────────────
-  function setConnectionState(connected, message, roomId = 'BEATZ-8080') {
-    if (dotStatus) dotStatus.classList.toggle('connected', connected);
-    if (sidebarDot) sidebarDot.classList.toggle('connected', connected);
-    if (dotStatusBar) dotStatusBar.classList.toggle('connected', connected);
+  // ─── 5. LIVE Socket.IO Relay Connection Sync ──────────────────────────────
+  function updateRelayUI(state) {
+    if (!state) return;
 
-    const statusText = connected ? 'Connected to Relay' : 'Disconnected';
-    if (txtRelayStatus) txtRelayStatus.textContent = statusText;
-    if (txtRelayDetail) txtRelayDetail.textContent = message;
-    if (sidebarStatusText) sidebarStatusText.textContent = statusText;
-    if (txtStatusBar) txtStatusBar.textContent = `${statusText} (${message})`;
+    const isConn = state.isConnected === true;
+    const isConnPending = state.status === 'connecting';
 
-    if (txtRoomId) txtRoomId.textContent = connected ? roomId : '—';
-    if (txtRoomIdFull) txtRoomIdFull.textContent = connected ? roomId : '—';
+    if (dotStatus) {
+      dotStatus.classList.toggle('connected', isConn);
+      if (isConnPending) dotStatus.className = 'relay-indicator';
+    }
+    if (sidebarDot) sidebarDot.classList.toggle('connected', isConn);
+    if (dotStatusBar) dotStatusBar.classList.toggle('connected', isConn);
+
+    const mainStatusText = isConn
+      ? 'Connected to Relay'
+      : (isConnPending ? 'Connecting…' : 'Disconnected');
+
+    if (txtRelayStatus) txtRelayStatus.textContent = mainStatusText;
+    if (txtRelayDetail) txtRelayDetail.textContent = state.detail || '';
+    if (sidebarStatusText) sidebarStatusText.textContent = mainStatusText;
+    if (txtStatusBar) txtStatusBar.textContent = `${mainStatusText} · ${state.detail || ''}`;
+
+    const displayRoom = state.roomId || (isConn ? state.pcId : '—');
+    if (txtRoomId) txtRoomId.textContent = displayRoom;
+    if (txtRoomIdFull) txtRoomIdFull.textContent = displayRoom;
+
+    if (txtPcName && state.pcName) txtPcName.textContent = state.pcName;
+    if (txtRelayUrl && state.relayUrl) txtRelayUrl.textContent = state.relayUrl;
+    if (txtRelayUrlInput && state.relayUrl && !txtRelayUrlInput.value) {
+      txtRelayUrlInput.value = state.relayUrl;
+    }
+
+    if (state.packetCount !== undefined && txtPacketCount) {
+      txtPacketCount.textContent = Number(state.packetCount).toLocaleString();
+    }
+    if (state.latency !== undefined && txtLatency) {
+      txtLatency.textContent = state.latency ? `${state.latency} ms` : '—';
+    }
   }
 
-  function simulateRelayHandshake() {
-    setConnectionState(false, 'Connecting to relay cluster...');
-    log(`Connecting to ${txtRelayUrlInput?.value || DEFAULT_RELAY_URL}...`);
-
-    setTimeout(() => {
-      const generatedRoomId = 'BEATZ-' + Math.floor(1000 + Math.random() * 9000);
-      setConnectionState(true, 'Ready for remote commands', generatedRoomId);
-      log(`Connected to relay successfully. Room ID: ${generatedRoomId}`);
-      if (txtLatency) txtLatency.textContent = '34 ms';
-
-      setInterval(() => {
-        packetCount++;
-        if (txtPacketCount) txtPacketCount.textContent = packetCount.toLocaleString();
-        if (dotPulse) {
-          dotPulse.classList.add('pulsing');
-          setTimeout(() => dotPulse.classList.remove('pulsing'), 150);
-        }
-      }, 3000);
-    }, 1000);
+  // Subscribe to real-time events from Main process
+  if (window.beatzAPI?.onRelayState) {
+    window.beatzAPI.onRelayState((state) => {
+      updateRelayUI(state);
+    });
   }
 
-  simulateRelayHandshake();
+  if (window.beatzAPI?.onRelayPacket) {
+    window.beatzAPI.onRelayPacket((data) => {
+      if (txtPacketCount) txtPacketCount.textContent = Number(data.packetCount || 0).toLocaleString();
+      if (txtLatency) txtLatency.textContent = data.latency ? `${data.latency} ms` : '—';
+      if (dotPulse) {
+        dotPulse.classList.add('pulsing');
+        setTimeout(() => dotPulse.classList.remove('pulsing'), 150);
+      }
+    });
+  }
 
-  // Mouse telemetry tracking
+  if (window.beatzAPI?.onRelayLog) {
+    window.beatzAPI.onRelayLog((msg) => {
+      log(msg);
+    });
+  }
+
+  // Query initial live state on mount
+  if (window.beatzAPI?.getRelayState) {
+    window.beatzAPI.getRelayState().then((state) => {
+      updateRelayUI(state);
+    });
+  }
+
+  // Track cursor position
   window.addEventListener('mousemove', (e) => {
     if (txtCursorCoords) {
       txtCursorCoords.textContent = `${e.clientX}, ${e.clientY}`;
     }
   });
 
-  // Volume slider
+  // Slider Volume Control
   if (sliderVolume) {
     sliderVolume.addEventListener('input', () => {
-      const val = sliderVolume.value;
+      const val = Number(sliderVolume.value);
       if (txtVolume) txtVolume.textContent = `${val}%`;
       if (badgeMuted) badgeMuted.hidden = val > 0;
+      window.beatzAPI?.setVolume(val);
     });
   }
 
-  // Quick Action Buttons
+  // ─── 6. Action Handlers (Connect, Reconnect, Lock, Hotspot, Firewall) ──────
   if (btnConnect) {
-    btnConnect.addEventListener('click', () => {
+    btnConnect.addEventListener('click', async () => {
       const url = txtRelayUrlInput?.value.trim();
-      if (url && txtRelayUrl) {
-        txtRelayUrl.textContent = url;
-        simulateRelayHandshake();
-      }
+      log(`Initiating manual connection to ${url || 'default relay'}…`);
+      const state = await window.beatzAPI?.connectRelay(url);
+      updateRelayUI(state);
     });
   }
 
   if (btnReconnect) {
-    btnReconnect.addEventListener('click', () => {
-      simulateRelayHandshake();
+    btnReconnect.addEventListener('click', async () => {
+      const url = txtRelayUrlInput?.value.trim();
+      log('Triggering relay reconnect…');
+      const state = await window.beatzAPI?.connectRelay(url);
+      updateRelayUI(state);
     });
   }
 
   if (btnLock) {
-    btnLock.addEventListener('click', () => {
-      log('Workstation lock signal triggered');
+    btnLock.addEventListener('click', async () => {
+      log('Triggering Workstation Lock…');
+      const res = await window.beatzAPI?.lockWorkstation();
+      if (res?.message) log(res.message);
     });
   }
 
   if (btnHotspot) {
-    btnHotspot.addEventListener('click', () => {
-      log('SoftAP Local Hotspot toggled');
+    btnHotspot.addEventListener('click', async () => {
+      log('Triggering SoftAP Local Hotspot…');
+      const res = await window.beatzAPI?.toggleHotspot();
+      if (res?.message) log(res.message);
     });
   }
 
   if (btnFirewall) {
-    btnFirewall.addEventListener('click', () => {
-      log('Firewall rule verified for port 8080');
+    btnFirewall.addEventListener('click', async () => {
+      log('Verifying Windows Defender Firewall rule for port 8080…');
+      const res = await window.beatzAPI?.addFirewallRule();
+      if (res?.message) log(res.message);
+      if (res?.error) log(`Firewall notice: ${res.error}`);
     });
   }
 

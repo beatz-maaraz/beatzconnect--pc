@@ -19,6 +19,35 @@ contextBridge.exposeInMainWorld('beatzAPI', {
   setTheme: (theme) => ipcRenderer.invoke('theme-set', theme),
   getTheme: () => ipcRenderer.invoke('theme-get'),
 
+  // Live Relay Server API
+  connectRelay: (url) => ipcRenderer.invoke('relay-connect', url),
+  disconnectRelay: () => ipcRenderer.invoke('relay-disconnect'),
+  getRelayState: () => ipcRenderer.invoke('relay-get-state'),
+
+  onRelayState: (cb) => {
+    const handler = (_e, state) => cb(state);
+    ipcRenderer.on('relay-state', handler);
+    return () => ipcRenderer.removeListener('relay-state', handler);
+  },
+
+  onRelayPacket: (cb) => {
+    const handler = (_e, data) => cb(data);
+    ipcRenderer.on('relay-packet', handler);
+    return () => ipcRenderer.removeListener('relay-packet', handler);
+  },
+
+  onRelayLog: (cb) => {
+    const handler = (_e, msg) => cb(msg);
+    ipcRenderer.on('relay-log', handler);
+    return () => ipcRenderer.removeListener('relay-log', handler);
+  },
+
+  // Native Hardware Actions
+  lockWorkstation: () => ipcRenderer.invoke('hardware-lock'),
+  toggleHotspot: () => ipcRenderer.invoke('hardware-hotspot'),
+  addFirewallRule: () => ipcRenderer.invoke('hardware-firewall'),
+  setVolume: (level) => ipcRenderer.invoke('hardware-volume', level),
+
   // Events from main process -> renderer
   onMaxChanged: (cb) => {
     const handler = (_e, isMax) => cb(isMax);

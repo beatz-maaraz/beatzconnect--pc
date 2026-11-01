@@ -2,7 +2,7 @@
  * Beatz Control — Electron Main Process
  * Wraps the cloud relay client in a Phone Link styled Fluent interface.
  * Handles: window creation, smooth animations, dark/light themes, system tray,
- *          auto-launch, and IPC management.
+ *          auto-launch, and persistent live Relay Socket.IO connection.
  */
 
 const {
@@ -18,6 +18,9 @@ const {
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
+
+const relayClient = require('./relay-client');
+const hardware = require('./hardware-controller');
 
 // ── Environment flags ─────────────────────────────────────────────────────
 const IS_DEV = process.argv.includes('--dev');
@@ -98,7 +101,7 @@ function createTray() {
     : nativeImage.createEmpty();
 
   tray = new Tray(img);
-  tray.setToolTip('Beatz Control — relay active');
+  tray.setToolTip('Beatz Control — Cloud Relay');
 
   const menu = Menu.buildFromTemplate([
     {
@@ -107,9 +110,12 @@ function createTray() {
     },
     { type: 'separator' },
     {
-      label: 'Started silently at boot',
-      enabled: false,
-      visible: IS_AUTOSTART,
+      label: 'Lock Workstation',
+      click: () => hardware.lockScreen(),
+    },
+    {
+      label: 'Reconnect Relay',
+      click: () => relayClient.connect(),
     },
     { type: 'separator' },
     {
@@ -142,8 +148,22 @@ function showWindow() {
 
 function quitApp() {
   isQuitting = true;
+  relayClient.disconnect();
   app.quit();
 }
+
+// ── Wire Relay Events -> Renderer IPC ─────────────────────────────────────
+relayClient.on('state-change', (state) => {
+  mainWindow?.webContents.send('relay-state', state);
+});
+
+relayClient.on('packet', (data) => {
+  mainWindow?.webContents.send('relay-packet', data);
+});
+
+relayClient.on('log', (message) => {
+  mainWindow?.webContents.send('relay-log', message);
+});
 
 // ── IPC Handlers: Auto-launch ─────────────────────────────────────────────
 ipcMain.handle('set-auto-launch', (_e, enabled) => {
@@ -175,32 +195,54 @@ ipcMain.handle('theme-get', () => {
   };
 });
 
+// ── IPC Handlers: Relay Connection ────────────────────────────────────────
+ipcMain.handle('relay-connect', (_e, url) => {
+  relayClient.connect(url);
+  return relayClient.getState();
+});
+
+ipcMain.handle('relay-disconnect', () => {
+  relayClient.disconnect();
+  return relayClient.getState();
+});
+
+ipcMain.handle('relay-get-state', () => {
+  return relayClient.getState();
+});
+
+// ── IPC Handlers: Hardware Operations ─────────────────────────────────────
+ipcMain.handle('hardware-lock', async () => {
+  return await hardware.lockScreen();
+});
+
+ipcMain.handle('hardware-hotspot', async () => {
+  return await hardware.toggleHotspot();
+});
+
+ipcMain.handle('hardware-firewall', async () => {
+  return await hardware.addFirewallRule();
+});
+
+ipcMain.handle('hardware-volume', async (_e, level) => {
+  return await hardware.setVolume(level);
+});
+
 // ── IPC Handlers: Window Chrome Actions ───────────────────────────────────
 ipcMain.on('window-minimize', () => {
-  if (mainWindow) {
-    mainWindow.minimize();
-  }
+  mainWindow?.minimize();
 });
 
 ipcMain.on('window-maximize', () => {
   if (!mainWindow) return;
-  if (mainWindow.isMaximized()) {
-    mainWindow.unmaximize();
-  } else {
-    mainWindow.maximize();
-  }
+  mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize();
 });
 
 ipcMain.on('window-close', () => {
-  if (mainWindow) {
-    mainWindow.close();
-  }
+  mainWindow?.close();
 });
 
 ipcMain.on('window-hide', () => {
-  if (mainWindow) {
-    mainWindow.hide();
-  }
+  mainWindow?.hide();
 });
 
 function sendMaxState() {
@@ -216,6 +258,9 @@ app.on('browser-window-created', (_, win) => {
 app.whenReady().then(() => {
   createTray();
   createWindow();
+
+  // Initiate real Socket.IO connection immediately on boot
+  relayClient.connect();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
