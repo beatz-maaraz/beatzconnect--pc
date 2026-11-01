@@ -177,3 +177,4 @@ bool HardwareController::killProcess(int pid)
 #endif
     return false;
 }
+

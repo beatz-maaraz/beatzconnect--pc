@@ -35,3 +35,4 @@ void AutoStartManager::setAutoStartEnabled(bool enabled)
     Q_UNUSED(enabled)
 #endif
 }
+

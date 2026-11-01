@@ -58,3 +58,4 @@ endif()
 
 # Installation rules for Qt Installer Framework packaging
 install(TARGETS BeatzControl DESTINATION .)
+

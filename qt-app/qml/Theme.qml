@@ -33,3 +33,4 @@ QtObject {
     readonly property int radiusLarge: 12
     readonly property int radiusPill: 9999
 }
+

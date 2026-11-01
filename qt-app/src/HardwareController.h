@@ -29,3 +29,4 @@ signals:
 };
 
 #endif // HARDWARECONTROLLER_H
+

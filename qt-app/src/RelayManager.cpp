@@ -258,3 +258,4 @@ void RelayManager::setStatus(const QString &text, const QString &detail)
     m_statusDetail = detail;
     emit statusChanged(m_statusText, m_statusDetail);
 }
+
