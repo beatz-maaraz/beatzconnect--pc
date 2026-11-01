@@ -1,0 +1,67 @@
+{
+  "name": "beatz-control",
+  "version": "1.23.50",
+  "description": "Beatz Control — Cloud Relay Remote Desktop Controller",
+  "main": "src/main.js",
+  "author": {
+    "name": "Beatz Control",
+    "email": "support@beatzcontrol.app"
+  },
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder --win",
+    "build:dir": "electron-builder --win --dir",
+    "pack": "electron-builder --win nsis"
+  },
+  "build": {
+    "appId": "com.beatzcontrol.app",
+    "productName": "Beatz Control",
+    "copyright": "© 2026 Beatz Control",
+    "asar": true,
+    "directories": {
+      "output": "dist-electron",
+      "buildResources": "assets"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "requestedExecutionLevel": "asInvoker",
+      "artifactName": "BeatzControl_Setup_${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Beatz Control",
+      "license": "assets/LICENSE.rtf",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "menuCategory": "Beatz Control"
+    }
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  }
+}

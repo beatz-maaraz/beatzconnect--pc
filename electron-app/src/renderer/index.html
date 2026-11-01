@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src *;" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Beatz Control</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="window-enter">
+
+  <!-- ═══════════════════════════════════════════════════════════
+       CUSTOM TITLEBAR (Phone Link Fluent Style)
+  ═══════════════════════════════════════════════════════════════ -->
+  <header class="titlebar" id="titlebar">
+    <div class="titlebar__drag-region"></div>
+
+    <div class="titlebar__left">
+      <div class="titlebar__logo">
+        <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+          <rect width="20" height="20" rx="5" fill="var(--accent-primary)"/>
+          <path d="M5 13 L8 7 L10 11 L12 8 L15 13" stroke="white"
+                stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <span class="titlebar__title">Beatz Control</span>
+      <span class="badge badge--cyan" id="badgeVersion">v1.23.50</span>
+      <span class="badge badge--green" id="badgeAutostart" hidden>AUTO</span>
+    </div>
+
+    <div class="titlebar__chrome">
+      <button class="chrome-btn" id="btnMinimize" title="Minimize" aria-label="Minimize">
+        <svg width="10" height="1" viewBox="0 0 10 1"><rect width="10" height="1" rx="0.5" fill="currentColor"/></svg>
+      </button>
+      <button class="chrome-btn" id="btnMaximize" title="Maximize" aria-label="Maximize">
+        <svg id="maxIcon" width="10" height="10" viewBox="0 0 10 10">
+          <rect x="0.5" y="0.5" width="9" height="9" rx="1" stroke="currentColor" stroke-width="1" fill="none"/>
+        </svg>
+      </button>
+      <button class="chrome-btn chrome-btn--close" id="btnClose" title="Close to tray" aria-label="Close">
+        <svg width="10" height="10" viewBox="0 0 10 10">
+          <line x1="0" y1="0" x2="10" y2="10" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+          <line x1="10" y1="0" x2="0" y2="10" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       MAIN APP SHELL (Sidebar + Dynamic Content Area)
+  ═══════════════════════════════════════════════════════════════ -->
+  <div class="app-shell">
+
+    <!-- ── Sidebar Navigation ── -->
+    <nav class="sidebar" role="navigation" aria-label="Main navigation">
+      <button class="nav-item nav-item--active" data-view="dashboard">
+        <svg class="nav-icon" viewBox="0 0 20 20" fill="none">
+          <rect x="2" y="2" width="7" height="7" rx="1.5" fill="currentColor"/>
+          <rect x="11" y="2" width="7" height="7" rx="1.5" fill="currentColor" opacity=".55"/>
+          <rect x="2" y="11" width="7" height="7" rx="1.5" fill="currentColor" opacity=".55"/>
+          <rect x="11" y="11" width="7" height="7" rx="1.5" fill="currentColor" opacity=".55"/>
+        </svg>
+        <span>Dashboard</span>
+      </button>
+      <button class="nav-item" data-view="apps">
+        <svg class="nav-icon" viewBox="0 0 20 20" fill="none">
+          <rect x="3" y="5" width="14" height="1.5" rx=".75" fill="currentColor"/>
+          <rect x="3" y="9.25" width="14" height="1.5" rx=".75" fill="currentColor"/>
+          <rect x="3" y="13.5" width="9" height="1.5" rx=".75" fill="currentColor"/>
+        </svg>
+        <span>Active Apps</span>
+      </button>
+      <button class="nav-item" data-view="settings">
+        <svg class="nav-icon" viewBox="0 0 20 20" fill="none">
+          <circle cx="10" cy="10" r="2.5" stroke="currentColor" stroke-width="1.4"/>
+          <path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.22 4.22l1.42 1.42M14.36 14.36l1.42 1.42M4.22 15.78l1.42-1.42M14.36 5.64l1.42-1.42"
+                stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+        </svg>
+        <span>Settings</span>
+      </button>
+      <button class="nav-item" data-view="logs">
+        <svg class="nav-icon" viewBox="0 0 20 20" fill="none">
+          <path d="M4 5h12M4 8.5h8M4 12h10M4 15.5h6"
+                stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+        </svg>
+        <span>Activity Log</span>
+      </button>
+
+      <!-- Sidebar Status -->
+      <div class="sidebar__status">
+        <div class="status-dot" id="sidebarDot"></div>
+        <span class="sidebar__status-text" id="sidebarStatusText">Connecting…</span>
+      </div>
+    </nav>
+
+    <!-- ── Content Pane ── -->
+    <main class="content">
+
+      <!-- ── DASHBOARD VIEW ── -->
+      <section class="view view--active" id="view-dashboard">
+
+        <!-- Autostart Notification Banner -->
+        <div class="banner banner--success" id="bannerAutostart" hidden>
+          <div class="banner__dot"></div>
+          <span>Running silently in background mode — auto-connected to relay on startup.</span>
+        </div>
+
+        <div class="dashboard-grid">
+
+          <!-- LEFT: Connection Panel -->
+          <div class="panel">
+            <p class="section-label">CLOUD RELAY</p>
+            <div class="relay-card" id="relayCard">
+              <div class="relay-card__header">
+                <div class="relay-indicator" id="dotStatus"></div>
+                <div>
+                  <p class="relay-card__title" id="txtRelayStatus">Connecting…</p>
+                  <p class="relay-card__sub" id="txtRelayDetail">Establishing connection</p>
+                </div>
+                <span class="badge badge--room" id="badgeRoomId">—</span>
+              </div>
+            </div>
+
+            <div class="info-grid">
+              <div class="info-item">
+                <span class="info-item__label">PC Name</span>
+                <span class="info-item__value" id="txtPcName">—</span>
+              </div>
+              <div class="info-item">
+                <span class="info-item__label">Resolution</span>
+                <span class="info-item__value" id="txtResolution">—</span>
+              </div>
+              <div class="info-item">
+                <span class="info-item__label">Room ID</span>
+                <span class="info-item__value mono" id="txtRoomIdFull">—</span>
+              </div>
+              <div class="info-item">
+                <span class="info-item__label">Relay URL</span>
+                <span class="info-item__value mono small" id="txtRelayUrl">—</span>
+              </div>
+            </div>
+
+            <p class="section-label" style="margin-top:20px">VOLUME</p>
+            <div class="volume-row">
+              <input type="range" class="slider" id="sliderVolume" min="0" max="100" value="50" />
+              <span class="vol-badge" id="txtVolume">50%</span>
+              <span class="badge badge--muted" id="badgeMuted" hidden>MUTED</span>
+            </div>
+          </div>
+
+          <!-- RIGHT: Telemetry & Actions Panel -->
+          <div class="panel">
+            <p class="section-label">TELEMETRY</p>
+
+            <div class="stat-row">
+              <span class="stat-label">Packets Received</span>
+              <div class="stat-value-wrap">
+                <div class="pulse-dot" id="dotPulse"></div>
+                <span class="stat-value" id="txtPacketCount">0</span>
+              </div>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Cursor Position</span>
+              <span class="stat-value mono" id="txtCursorCoords">—</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Latency</span>
+              <span class="stat-value" id="txtLatency">—</span>
+            </div>
+
+            <p class="section-label" style="margin-top:20px">QUICK ACTIONS</p>
+            <div class="action-grid">
+              <button class="action-btn" id="btnHotspot">
+                <svg viewBox="0 0 20 20" fill="none">
+                  <circle cx="10" cy="10" r="2" fill="currentColor"/>
+                  <path d="M6.34 13.66a6 6 0 010-8.49M13.66 13.66a6 6 0 000-8.49"
+                        stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                  <path d="M3.51 16.49a10 10 0 010-14.14M16.49 16.49a10 10 0 000-14.14"
+                        stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity=".45"/>
+                </svg>
+                Toggle Hotspot
+              </button>
+              <button class="action-btn action-btn--danger" id="btnLock">
+                <svg viewBox="0 0 20 20" fill="none">
+                  <rect x="4" y="9" width="12" height="9" rx="2" stroke="currentColor" stroke-width="1.4"/>
+                  <path d="M7 9V6a3 3 0 016 0v3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                </svg>
+                Lock Screen
+              </button>
+              <button class="action-btn" id="btnFirewall">
+                <svg viewBox="0 0 20 20" fill="none">
+                  <path d="M10 2L3 6v5c0 4 3.5 7 7 8 3.5-1 7-4 7-8V6l-7-4z"
+                        stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+                </svg>
+                Add Firewall Rule
+              </button>
+              <button class="action-btn" id="btnReconnect">
+                <svg viewBox="0 0 20 20" fill="none">
+                  <path d="M4 10a6 6 0 1011.5 2.3" stroke="currentColor" stroke-width="1.5"
+                        stroke-linecap="round"/>
+                  <polyline points="14,6 16.5,3.5 19,6" stroke="currentColor"
+                             stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                Reconnect Relay
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── ACTIVE APPS VIEW ── -->
+      <section class="view" id="view-apps">
+        <p class="section-label">ACTIVE PROCESSES</p>
+        <div class="app-list" id="appList">
+          <p class="empty-state">No active client streams connected. Open the mobile controller web interface to link.</p>
+        </div>
+      </section>
+
+      <!-- ── SETTINGS VIEW ── -->
+      <section class="view" id="view-settings">
+
+        <!-- Theme Setting (Dark Mode / Light Mode) -->
+        <p class="section-label">APPEARANCE &amp; THEME</p>
+        <div class="panel settings-panel">
+          <p class="field-label">Select application color scheme (Microsoft Phone Link style)</p>
+          <div class="theme-selector-grid">
+            <button class="theme-choice-btn active" data-theme-choice="dark" id="btnThemeDark">
+              <div class="theme-preview theme-preview--dark"></div>
+              <span>Dark Mode</span>
+            </button>
+            <button class="theme-choice-btn" data-theme-choice="light" id="btnThemeLight">
+              <div class="theme-preview theme-preview--light"></div>
+              <span>Light Mode</span>
+            </button>
+            <button class="theme-choice-btn" data-theme-choice="system" id="btnThemeSystem">
+              <div class="theme-preview theme-preview--system"></div>
+              <span>System Default</span>
+            </button>
+          </div>
+        </div>
+
+        <p class="section-label" style="margin-top:20px">RELAY CONFIGURATION</p>
+        <div class="panel settings-panel">
+          <label class="field-label" for="txtRelayUrlInput">Relay Server URL</label>
+          <div class="input-row">
+            <input type="text" class="text-input" id="txtRelayUrlInput"
+                   placeholder="wss://backend-n4yg.onrender.com" />
+            <button class="btn btn--primary" id="btnConnect">Connect</button>
+          </div>
+          <p class="field-hint" id="txtServiceStatus">Service: ready and active</p>
+        </div>
+
+        <p class="section-label" style="margin-top:20px">STARTUP &amp; BACKGROUND BEHAVIOR</p>
+        <div class="panel settings-panel">
+          <label class="toggle-row">
+            <input type="checkbox" id="chkAutoLaunch" />
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            <span>Launch automatically on Windows logon (silent / tray mode)</span>
+          </label>
+          <label class="toggle-row" style="margin-top:12px">
+            <input type="checkbox" id="chkMinimizeToTray" checked />
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            <span>Minimize to tray instead of closing (keeps relay alive)</span>
+          </label>
+
+          <div class="startup-status-row" id="startupStatusRow">
+            <div class="status-dot status-dot--amber" id="dotStartupMode"></div>
+            <span id="txtStartupMode">Windows startup: Not configured</span>
+          </div>
+        </div>
+
+        <p class="section-label" style="margin-top:20px">AUTO-CONNECTION STATUS</p>
+        <div class="panel settings-panel">
+          <div class="info-block">
+            <p class="info-block__title">Automatic Relay Connection</p>
+            <p class="info-block__body">
+              The relay service connects immediately on launch and auto-reconnects with
+              exponential backoff (5 s → 60 s) if the connection drops.
+            </p>
+            <span class="badge badge--cyan" style="margin-top:8px;display:inline-flex">Always On</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── LOGS VIEW ── -->
+      <section class="view" id="view-logs">
+        <div class="log-toolbar">
+          <p class="section-label" style="margin:0">ACTIVITY LOG</p>
+          <button class="btn btn--ghost btn--sm" id="btnClearLogs">Clear</button>
+        </div>
+        <div class="log-pane" id="logPane"></div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       STATUS BAR
+  ═══════════════════════════════════════════════════════════════ -->
+  <footer class="statusbar">
+    <div class="statusbar__left">
+      <div class="status-dot status-dot--amber" id="dotStatusBar"></div>
+      <span id="txtStatusBar">Initialising…</span>
+    </div>
+    <div class="statusbar__right">
+      <span id="txtStartupModeBar">Manual Launch</span>
+      <span class="statusbar__sep">·</span>
+      <span>Beatz Control v1.23.50</span>
+      <span class="statusbar__sep">·</span>
+      <span>© 2026</span>
+    </div>
+  </footer>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
