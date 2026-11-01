@@ -1,4 +1,5 @@
 #include <QApplication>
+#include <QStyle>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickWindow>
@@ -132,7 +133,7 @@ int main(int argc, char *argv[])
     QObject::connect(&trayIcon, &QSystemTrayIcon::activated, [mainWindow](QSystemTrayIcon::ActivationReason reason) {
         if (reason == QSystemTrayIcon::DoubleClick || reason == QSystemTrayIcon::Trigger) {
             if (mainWindow) {
-                if (mainWindow->isVisible() && !mainWindow->isMinimized()) {
+                if (mainWindow->isVisible() && mainWindow->visibility() != QWindow::Minimized) {
                     mainWindow->hide();
                 } else {
                     mainWindow->show();

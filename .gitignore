@@ -1,0 +1,11 @@
+# Build and staging artifacts
+qt-app/build/
+qt-app/.venv/
+qt-app/installer/packages/com.beatzcontrol.app/data/
+qt-app/installer/*.exe
+aqtinstall.log
+update_ui.py
+
+# .NET artifacts
+**/bin/
+**/obj/

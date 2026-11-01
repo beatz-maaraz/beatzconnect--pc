@@ -13,9 +13,16 @@ set CONFIG_XML=%SCRIPT_DIR%config\config.xml
 set PACKAGES_DIR=%SCRIPT_DIR%packages
 set OUTPUT_EXE=%SCRIPT_DIR%BeatzControl_Setup_1.23.50.exe
 
+:: Add Qt and QtIFW to PATH if present
+if exist "d:\Qt\6.6.3\msvc2019_64\bin" set "PATH=d:\Qt\6.6.3\msvc2019_64\bin;!PATH!"
+if exist "d:\Qt\Tools\QtInstallerFramework\4.7\bin" set "PATH=d:\Qt\Tools\QtInstallerFramework\4.7\bin;!PATH!"
+
 :: 1. Verify build executable exists
-if not exist "%BUILD_DIR%\BeatzControl.exe" (
-    echo [ERROR] Build target not found at %BUILD_DIR%\BeatzControl.exe
+set EXE_PATH=%BUILD_DIR%\Release\BeatzControl.exe
+if not exist "%EXE_PATH%" set EXE_PATH=%BUILD_DIR%\BeatzControl.exe
+
+if not exist "%EXE_PATH%" (
+    echo [ERROR] Build target not found at %BUILD_DIR%\Release\BeatzControl.exe or %BUILD_DIR%\BeatzControl.exe
     echo Please run CMake configure and build first:
     echo   cmake -B build -S .
     echo   cmake --build build --config Release
@@ -29,8 +36,10 @@ mkdir "%DATA_DIR%"
 
 :: 3. Copy application binary and assets
 echo [2/4] Copying application binaries...
-copy "%BUILD_DIR%\BeatzControl.exe" "%DATA_DIR%\" >nul
+copy "%EXE_PATH%" "%DATA_DIR%\" >nul
 copy "%QT_APP_DIR%\assets\icon.ico" "%DATA_DIR%\" >nul
+if exist "%QT_APP_DIR%\..\bin\RemoteControlServer.exe" copy "%QT_APP_DIR%\..\bin\RemoteControlServer.exe" "%DATA_DIR%\" >nul
+if exist "%BUILD_DIR%\Release\RemoteControlServer.exe" copy "%BUILD_DIR%\Release\RemoteControlServer.exe" "%DATA_DIR%\" >nul
 
 :: 4. Deploy Qt runtime dependencies using windeployqt
 echo [3/4] Running windeployqt for runtime bundling...
