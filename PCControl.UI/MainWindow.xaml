@@ -13,41 +13,41 @@
     <Window.Resources>
 
         <!-- ── Palette ────────────────────────────────────────────────────── -->
-        <SolidColorBrush x:Key="BgDeep"         Color="#070B14"/>
-        <SolidColorBrush x:Key="BgSurface"      Color="#0D1526"/>
-        <SolidColorBrush x:Key="BgCard"         Color="#111C30"/>
-        <SolidColorBrush x:Key="BgCardAlt"      Color="#0F1A2B"/>
-        <SolidColorBrush x:Key="BorderSubtle"   Color="#1E2D45"/>
+        <SolidColorBrush x:Key="BgDeep"         Color="#E8070B14"/>
+        <SolidColorBrush x:Key="BgSurface"      Color="#CC0D1526"/>
+        <SolidColorBrush x:Key="BgCard"         Color="#B0111C30"/>
+        <SolidColorBrush x:Key="BgCardAlt"      Color="#900F1A2B"/>
+        <SolidColorBrush x:Key="BorderSubtle"   Color="#33818CF8"/>
         <SolidColorBrush x:Key="BorderMid"      Color="#263550"/>
-        <SolidColorBrush x:Key="AccentCyan"     Color="#22D3EE"/>
+        <SolidColorBrush x:Key="AccentCyan"     Color="#00E5FF"/>
         <SolidColorBrush x:Key="AccentIndigo"   Color="#818CF8"/>
         <SolidColorBrush x:Key="AccentGreen"    Color="#10B981"/>
         <SolidColorBrush x:Key="AccentAmber"    Color="#F59E0B"/>
         <SolidColorBrush x:Key="AccentRed"      Color="#EF4444"/>
-        <SolidColorBrush x:Key="TextPrimary"    Color="#F1F5F9"/>
+        <SolidColorBrush x:Key="TextPrimary"    Color="#F8FAFC"/>
         <SolidColorBrush x:Key="TextSecondary"  Color="#94A3B8"/>
         <SolidColorBrush x:Key="TextMuted"      Color="#4B6180"/>
 
         <!-- ── Gradients ──────────────────────────────────────────────────── -->
         <LinearGradientBrush x:Key="GradientCyan" StartPoint="0,0" EndPoint="1,0">
             <GradientStop Color="#0EA5E9" Offset="0"/>
-            <GradientStop Color="#22D3EE" Offset="1"/>
+            <GradientStop Color="#00E5FF" Offset="1"/>
         </LinearGradientBrush>
 
         <LinearGradientBrush x:Key="GradientBorder" StartPoint="0,0" EndPoint="1,1">
-            <GradientStop Color="#22D3EE" Offset="0"/>
+            <GradientStop Color="#00E5FF" Offset="0"/>
             <GradientStop Color="#818CF8" Offset="0.5"/>
-            <GradientStop Color="#0D1526" Offset="1"/>
+            <GradientStop Color="#CC0D1526" Offset="1"/>
         </LinearGradientBrush>
 
         <LinearGradientBrush x:Key="GradientTitleBar" StartPoint="0,0" EndPoint="1,0">
             <GradientStop Color="#090E1A" Offset="0"/>
-            <GradientStop Color="#0D1526" Offset="1"/>
+            <GradientStop Color="#CC0D1526" Offset="1"/>
         </LinearGradientBrush>
 
         <!-- ── Shared Drop Shadows ────────────────────────────────────────── -->
-        <DropShadowEffect x:Key="CardShadow" Color="#000000" BlurRadius="24" ShadowDepth="6" Opacity="0.45"/>
-        <DropShadowEffect x:Key="GlowCyan"  Color="#22D3EE"  BlurRadius="14" ShadowDepth="0" Opacity="0.55"/>
+        <DropShadowEffect x:Key="CardShadow" Color="#000000" BlurRadius="28" ShadowDepth="5" Opacity="0.35"/>
+        <DropShadowEffect x:Key="GlowCyan"  Color="#00E5FF"  BlurRadius="14" ShadowDepth="0" Opacity="0.55"/>
         <DropShadowEffect x:Key="GlowGreen" Color="#10B981"  BlurRadius="14" ShadowDepth="0" Opacity="0.55"/>
 
         <!-- ── Card Border Style ──────────────────────────────────────────── -->
@@ -199,7 +199,7 @@
                                                 <Ellipse Fill="{StaticResource AccentCyan}"
                                                          Stroke="#FFFFFF" StrokeThickness="1.5">
                                                     <Ellipse.Effect>
-                                                        <DropShadowEffect Color="#22D3EE" BlurRadius="8"
+                                                        <DropShadowEffect Color="#00E5FF" BlurRadius="8"
                                                                           ShadowDepth="0" Opacity="0.75"/>
                                                     </Ellipse.Effect>
                                                 </Ellipse>
@@ -239,7 +239,7 @@
             BorderThickness="1.2"
             CornerRadius="18">
         <Border.Effect>
-            <DropShadowEffect Color="#000000" BlurRadius="40" ShadowDepth="12" Opacity="0.7"/>
+            <DropShadowEffect Color="#000000" BlurRadius="48" ShadowDepth="14" Opacity="0.55"/>
         </Border.Effect>
 
         <Grid>
@@ -282,6 +282,15 @@
                                         Padding="5,1" Margin="8,0,0,0">
                                     <TextBlock Text="v2.0" FontSize="9"
                                                Foreground="{StaticResource AccentCyan}"
+                                               FontWeight="Bold"/>
+                                </Border>
+                                <Border x:Name="BadgeStartupMode"
+                                        Background="#0D2010" CornerRadius="4"
+                                        BorderBrush="#10B981" BorderThickness="1"
+                                        Padding="5,1" Margin="6,0,0,0"
+                                        Visibility="Collapsed">
+                                    <TextBlock Text="AUTO" FontSize="9"
+                                               Foreground="#10B981"
                                                FontWeight="Bold"/>
                                 </Border>
                             </StackPanel>
@@ -347,6 +356,26 @@
                         <ColumnDefinition Width="16"/>
                         <ColumnDefinition Width="1.3*"/>
                     </Grid.ColumnDefinitions>
+
+                    <!-- Silent autostart notification banner -->
+                    <Border x:Name="BannerAutostart"
+                            Grid.ColumnSpan="3"
+                            Background="#071A10" CornerRadius="8"
+                            BorderBrush="#10B981" BorderThickness="1"
+                            Padding="14,8" Margin="0,0,0,12"
+                            VerticalAlignment="Top"
+                            Visibility="Collapsed">
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse Width="8" Height="8" Fill="#10B981"
+                                     VerticalAlignment="Center" Margin="0,0,10,0"/>
+                            <TextBlock FontSize="11" FontWeight="SemiBold"
+                                       Foreground="#10B981" VerticalAlignment="Center">
+                                <Run Text="Running silently in background mode — "/>
+                                <Run Text="auto-connected to relay on startup."
+                                     Foreground="#6EE7B7"/>
+                            </TextBlock>
+                        </StackPanel>
+                    </Border>
 
                     <!-- LEFT PANEL: Relay connection -->
                     <Border Grid.Column="0" Style="{StaticResource GlassCard}">
@@ -772,22 +801,73 @@
                                 </Border>
 
                                 <!-- Startup options -->
-                                <TextBlock Text="STARTUP" FontSize="9" FontWeight="Bold"
+                                <TextBlock Text="STARTUP &amp; BACKGROUND BEHAVIOR" FontSize="9" FontWeight="Bold"
                                            Foreground="{StaticResource TextMuted}"
                                            Margin="0,0,0,8"/>
-                                <Border Style="{StaticResource InfoBlock}" Margin="0">
+                                <Border Style="{StaticResource InfoBlock}" Margin="0,0,0,16">
                                     <StackPanel>
+                                        <TextBlock Text="System Startup"
+                                                   FontSize="12" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource TextPrimary}"
+                                                   Margin="0,0,0,4"/>
+                                        <TextBlock Text="When enabled, Beatz Control starts silently with Windows and auto-connects to the relay server."
+                                                   FontSize="10" Foreground="{StaticResource TextMuted}"
+                                                   TextWrapping="Wrap" Margin="0,0,0,12"/>
                                         <CheckBox x:Name="ChkStartWithWindows"
-                                                  Content="Start Beatz Control with Windows"
+                                                  Content="Launch automatically on Windows logon (silent / tray mode)"
                                                   Foreground="{StaticResource TextPrimary}"
-                                                  FontSize="12" Margin="0,0,0,8"
+                                                  FontSize="12" Margin="0,0,0,10"
                                                   Checked="ChkStartWithWindows_Changed"
                                                   Unchecked="ChkStartWithWindows_Changed"/>
                                         <CheckBox x:Name="ChkMinimizeToTray"
-                                                  Content="Minimize to tray instead of closing"
+                                                  Content="Minimize to tray instead of closing (keep relay alive)"
                                                   Foreground="{StaticResource TextPrimary}"
-                                                  FontSize="12" IsChecked="True"/>
+                                                  FontSize="12" Margin="0,0,0,4"
+                                                  IsChecked="True"/>
+
+                                        <!-- Silent startup status indicator -->
+                                        <Border x:Name="BannerStartupStatus"
+                                                Background="#0A1620" CornerRadius="6"
+                                                BorderBrush="{StaticResource BorderSubtle}"
+                                                BorderThickness="1" Padding="10,8" Margin="0,10,0,0">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Ellipse x:Name="DotStartupMode" Width="7" Height="7"
+                                                         Fill="{StaticResource AccentAmber}"
+                                                         VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                <TextBlock x:Name="TxtStartupMode"
+                                                           Text="Windows startup: Not configured"
+                                                           FontSize="10" FontWeight="SemiBold"
+                                                           Foreground="{StaticResource TextSecondary}"
+                                                           VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Border>
                                     </StackPanel>
+                                </Border>
+
+                                <!-- Auto-connection status block -->
+                                <TextBlock Text="AUTO-CONNECTION" FontSize="9" FontWeight="Bold"
+                                           Foreground="{StaticResource TextMuted}"
+                                           Margin="0,0,0,8"/>
+                                <Border Style="{StaticResource InfoBlock}" Margin="0">
+                                    <Grid>
+                                        <StackPanel>
+                                            <TextBlock Text="Automatic Relay Connection"
+                                                       FontSize="12" FontWeight="SemiBold"
+                                                       Foreground="{StaticResource TextPrimary}"/>
+                                            <TextBlock Text="Beatz Control connects to the cloud relay immediately on launch with exponential backoff reconnection (5s → 60s)."
+                                                       FontSize="10" Foreground="{StaticResource TextMuted}"
+                                                       TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                        <Border HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                Background="#0D2218" CornerRadius="6" Padding="10,5">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Ellipse Width="7" Height="7" Fill="{StaticResource AccentGreen}"
+                                                         VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                                <TextBlock Text="Always On" FontSize="10" FontWeight="Bold"
+                                                           Foreground="{StaticResource AccentGreen}"/>
+                                            </StackPanel>
+                                        </Border>
+                                    </Grid>
                                 </Border>
 
                             </StackPanel>
@@ -847,6 +927,10 @@
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
                                 VerticalAlignment="Center">
+                        <TextBlock x:Name="TxtStartupModeBar"
+                                   Text="Manual Launch" FontSize="10"
+                                   Foreground="{StaticResource TextMuted}"
+                                   Margin="0,0,12,0"/>
                         <TextBlock Text="Beatz Control  ·  " FontSize="10"
                                    Foreground="{StaticResource TextMuted}"/>
                         <TextBlock Text="© 2026" FontSize="10"

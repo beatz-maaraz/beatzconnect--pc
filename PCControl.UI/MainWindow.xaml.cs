@@ -1,10 +1,13 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Media.Effects;
 using System.Windows.Threading;
 using Forms = System.Windows.Forms;
@@ -15,10 +18,54 @@ namespace PCControl.UI
 {
     public partial class MainWindow : Window
     {
+        #region Win32 Window Backdrop & Blur Interop
+        [DllImport("dwmapi.dll")]
+        private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
+
+        [DllImport("user32.dll")]
+        private static extern int SetWindowCompositionAttribute(IntPtr hwnd, ref WindowCompositionAttributeData data);
+
+        private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+        private const int DWMWA_SYSTEMBACKDROP_TYPE = 38; // Windows 11 22H2+ Mica/Acrylic
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct WindowCompositionAttributeData
+        {
+            public WindowCompositionAttribute Attribute;
+            public IntPtr Data;
+            public int SizeOfData;
+        }
+
+        private enum WindowCompositionAttribute
+        {
+            WCA_ACCENT_POLICY = 19
+        }
+
+        private enum AccentState
+        {
+            ACCENT_DISABLED = 0,
+            ACCENT_ENABLE_GRADIENT = 1,
+            ACCENT_ENABLE_TRANSPARENTGRADIENT = 2,
+            ACCENT_ENABLE_BLURBEHIND = 3,
+            ACCENT_ENABLE_ACRYLICBLURBEHIND = 4,
+            ACCENT_INVALID_STATE = 5
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct AccentPolicy
+        {
+            public AccentState AccentState;
+            public int AccentFlags;
+            public int GradientColor;
+            public int AnimationId;
+        }
+        #endregion
+
         // ─── Core services ────────────────────────────────────────────────
         private readonly NativeHardwareController _hardware;
         private readonly AudioEndpointController  _audio;
         private RelayConnectionService?           _relay;
+        private WebSocketAccessPointServer?       _localServer;
 
         // ─── UI helpers ───────────────────────────────────────────────────
         private Forms.NotifyIcon? _notifyIcon;
@@ -26,6 +73,7 @@ namespace PCControl.UI
         private bool              _isActualClose;
         private bool              _isHotspotRunning;
         private System.Windows.Point _lastTrackpadPt;
+        private bool              _isMinimizing;
 
         // ─── Configuration ────────────────────────────────────────────────
         private const string DefaultRelayUrl = RelayConnectionService.DefaultRelayUrl;
@@ -38,10 +86,113 @@ namespace PCControl.UI
 
             InitializeComponent();
 
+            Loaded += MainWindow_Loaded;
             InitializeSystemTray();
             PopulatePcInfo();
+            InitializeLocalServer();
             InitializeRelayService(DefaultRelayUrl);
             StartTelemetryTimer();
+        }
+
+        private void MainWindow_Loaded(object sender, RoutedEventArgs e)
+        {
+            EnableFluentBackdrop();
+
+            // Check if launched with --autostart or --minimized flag
+            string[] args = Environment.GetCommandLineArgs();
+            bool silentStartup = false;
+            foreach (var arg in args)
+            {
+                if (string.Equals(arg, "--autostart", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(arg, "--minimized", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(arg, "-silent", StringComparison.OrdinalIgnoreCase))
+                {
+                    silentStartup = true;
+                    break;
+                }
+            }
+
+            if (silentStartup)
+            {
+                // Start silently in the background / system tray
+                Hide();
+                WindowState = WindowState.Minimized;
+                _notifyIcon?.ShowBalloonTip(2000, "Beatz Control",
+                    "Started silently in background — connected to relay.",
+                    Forms.ToolTipIcon.Info);
+            }
+            else
+            {
+                PlayWindowEntranceAnimation();
+            }
+
+            // Wire startup mode UI indicators
+            if (silentStartup)
+            {
+                BannerAutostart.Visibility   = Visibility.Visible;
+                BadgeStartupMode.Visibility  = Visibility.Visible;
+                TxtStartupModeBar.Text       = "Auto-started (silent)";
+                TxtStartupModeBar.Foreground = new SolidColorBrush(Color.FromRgb(16, 185, 129));
+            }
+        }
+
+        private void EnableFluentBackdrop()
+        {
+            try
+            {
+                var hwnd = new WindowInteropHelper(this).Handle;
+                if (hwnd == IntPtr.Zero) return;
+
+                // 1. Enable Immersive Dark Mode for Win32 frame/system elements
+                int darkMode = 1;
+                DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref darkMode, sizeof(int));
+
+                // 2. Try Windows 11 DWM Acrylic backdrop (DWMWA_SYSTEMBACKDROP_TYPE = 3 for Acrylic, 2 for Mica)
+                int backdropType = 3; // Acrylic
+                int res = DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, ref backdropType, sizeof(int));
+
+                // 3. Fallback to AccentPolicy Acrylic blur behind for Win10 / older Win11 builds
+                if (res != 0)
+                {
+                    var policy = new AccentPolicy
+                    {
+                        AccentState = AccentState.ACCENT_ENABLE_ACRYLICBLURBEHIND,
+                        AccentFlags = 2,
+                        GradientColor = unchecked((int)0xC8080E1A) // Semi-transparent dark slate tint
+                    };
+
+                    int size = Marshal.SizeOf(policy);
+                    IntPtr pPolicy = Marshal.AllocHGlobal(size);
+                    try
+                    {
+                        Marshal.StructureToPtr(policy, pPolicy, false);
+                        var data = new WindowCompositionAttributeData
+                        {
+                            Attribute = WindowCompositionAttribute.WCA_ACCENT_POLICY,
+                            SizeOfData = size,
+                            Data = pPolicy
+                        };
+                        SetWindowCompositionAttribute(hwnd, ref data);
+                    }
+                    finally
+                    {
+                        Marshal.FreeHGlobal(pPolicy);
+                    }
+                }
+            }
+            catch
+            {
+                // Graceful fallback to rich WPF dark acrylic gradients
+            }
+        }
+
+        private void PlayWindowEntranceAnimation()
+        {
+            var fadeIn = new DoubleAnimation(0.0, 1.0, TimeSpan.FromMilliseconds(280))
+            {
+                EasingFunction = new QuarticEase { EasingMode = EasingMode.EaseOut }
+            };
+            BeginAnimation(OpacityProperty, fadeIn);
         }
 
         // ─── Initialisation ───────────────────────────────────────────────
@@ -59,6 +210,29 @@ namespace PCControl.UI
 
             // Pre-populate the relay URL text box in Settings tab.
             TxtRelayUrlInput.Text = RelayConnectionService.DefaultRelayUrl;
+
+            // Detect current startup registry state and pre-populate the checkbox
+            using var runKey = Registry.CurrentUser.OpenSubKey(
+                @"SOFTWARE\Microsoft\Windows\CurrentVersion\Run");
+            bool startupEnabled = runKey?.GetValue("BeatzControl") != null;
+            ChkStartWithWindows.IsChecked = startupEnabled;
+        }
+
+        private void InitializeLocalServer()
+        {
+            try
+            {
+                _localServer = new WebSocketAccessPointServer(8080, _hardware, _audio);
+                _localServer.ClientConnected += endpoint => Log($"LAN client connected: {endpoint}");
+                _localServer.ClientDisconnected += endpoint => Log($"LAN client disconnected: {endpoint}");
+                _localServer.CommandExecuted += (endpoint, cmd) => Log($"[LAN {endpoint}] {cmd}");
+                _localServer.Start();
+                Log("Local LAN/Hotspot server listening on port 8080.");
+            }
+            catch (Exception ex)
+            {
+                Log($"Local server initialization note: {ex.Message}");
+            }
         }
 
         private void InitializeRelayService(string relayUrl)
@@ -206,12 +380,20 @@ namespace PCControl.UI
             Show();
             WindowState = WindowState.Normal;
             Activate();
+
+            // Smooth restore animation
+            var restoreAnim = new DoubleAnimation(0.2, 1.0, TimeSpan.FromMilliseconds(220))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            };
+            BeginAnimation(OpacityProperty, restoreAnim);
         }
 
         private void ExitApp()
         {
             _isActualClose = true;
             _telemetryTimer?.Stop();
+            _localServer?.Stop();
             _relay?.Stop();
             _relay?.Dispose();
 
@@ -250,7 +432,23 @@ namespace PCControl.UI
 
         private void BtnMinimize_Click(object sender, RoutedEventArgs e)
         {
-            WindowState = WindowState.Minimized;
+            if (_isMinimizing) return;
+            _isMinimizing = true;
+
+            // Fluent smooth minimize transition
+            var anim = new DoubleAnimation(1.0, 0.0, TimeSpan.FromMilliseconds(180))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn }
+            };
+
+            anim.Completed += (s, args) =>
+            {
+                WindowState = WindowState.Minimized;
+                Opacity = 1.0;
+                _isMinimizing = false;
+            };
+
+            BeginAnimation(OpacityProperty, anim);
         }
 
         private void BtnMaximize_Click(object sender, RoutedEventArgs e)
@@ -547,20 +745,38 @@ namespace PCControl.UI
 
                 if (ChkStartWithWindows.IsChecked == true)
                 {
-                    string exePath = $"\"{Process.GetCurrentProcess().MainModule?.FileName}\"";
+                    string exePath = $"\"{Process.GetCurrentProcess().MainModule?.FileName}\" --autostart --minimized";
                     key.SetValue(appName, exePath);
-                    Log("Added to Windows startup.");
+                    Log("Added to Windows startup (silent background mode).");
                 }
                 else
                 {
                     key.DeleteValue(appName, throwOnMissingValue: false);
                     Log("Removed from Windows startup.");
                 }
+
+                UpdateStartupIndicator(ChkStartWithWindows.IsChecked == true);
             }
             catch (Exception ex) { Log($"Startup registry error: {ex.Message}"); }
         }
 
         // ─── Log Tab ──────────────────────────────────────────────────────
+
+        private void UpdateStartupIndicator(bool enabled)
+        {
+            if (DotStartupMode == null || TxtStartupMode == null) return;
+
+            if (enabled)
+            {
+                DotStartupMode.Fill = new SolidColorBrush(Color.FromRgb(16, 185, 129));
+                TxtStartupMode.Text = "Windows startup: Enabled — launches silently with --autostart --minimized";
+            }
+            else
+            {
+                DotStartupMode.Fill = new SolidColorBrush(Color.FromRgb(245, 158, 11));
+                TxtStartupMode.Text = "Windows startup: Not configured";
+            }
+        }
 
         private void BtnClearLogs_Click(object sender, RoutedEventArgs e) => TxtLogs.Clear();
     }

@@ -1,7 +1,8 @@
 ; ============================================================
-;  Beatz Control — Inno Setup Installer Script
-;  Target:  Beatz Control v2.0
-;  Relay:   https://backend-n4yg.onrender.com
+;  Beatz Control — Inno Setup Step-by-Step Installation Wizard
+;  Target:      Beatz Control v2.0
+;  Publisher:   Beatz Control Technologies
+;  Relay:       https://backend-n4yg.onrender.com
 ; ============================================================
 
 #define AppName      "Beatz Control"
@@ -20,104 +21,102 @@ AppSupportURL            = {#AppURL}
 AppUpdatesURL            = {#AppURL}
 AppPublisher             = {#AppPublisher}
 
-; ── Install paths ────────────────────────────────────────────
-DefaultDirName           = {autopf}\{#AppName}
-DefaultGroupName         = {#AppName}
-DisableProgramGroupPage  = yes
+; ── Step-by-Step Installation Wizard Flow ────────────────────
+; 1. Welcome Page (Active)
+DisableWelcomePage       = no
 
-; ── Output ───────────────────────────────────────────────────
+; 2. License Agreement Screen
+LicenseFile              = LICENSE.txt
+
+; 3. Destination Directory Selection
+DisableDirPage           = no
+DefaultDirName           = {autopf}\{#AppName}
+AllowNoIcons             = no
+
+; 4. Program Group Selection
+DisableProgramGroupPage  = no
+DefaultGroupName         = {#AppName}
+
+; 5. Installation Progress Bar & Status (Active by default during install)
+ShowComponentSizes       = yes
+
+; ── Output & Compression ─────────────────────────────────────
 OutputDir                = ..\dist
 OutputBaseFilename       = BeatzControl_Setup_v{#AppVersion}
-SetupIconFile            = assets\icon.ico
-
-; ── Compression ──────────────────────────────────────────────
 Compression              = lzma2/ultra64
 SolidCompression         = yes
 LZMAUseSeparateProcess   = yes
 
-; ── Appearance ───────────────────────────────────────────────
+; ── Modern Fluent Wizard Styling ─────────────────────────────
 WizardStyle              = modern
 WizardSizePercent        = 120
-DisableWelcomePage       = no
+WizardResizable          = no
 ShowLanguageDialog       = no
 
-; ── Privileges ───────────────────────────────────────────────
+; ── Permissions & System Requirements ────────────────────────
 PrivilegesRequired       = admin
 PrivilegesRequiredOverridesAllowed = dialog
-
-; ── Architecture ─────────────────────────────────────────────
 ArchitecturesAllowed            = x64compatible
 ArchitecturesInstallIn64BitMode = x64compatible
 
-; ── Misc ─────────────────────────────────────────────────────
+; ── App State & Shutdown Handling ────────────────────────────
+CloseApplications        = yes
+RestartApplications      = no
 UninstallDisplayIcon     = {app}\{#AppExeName}
 UninstallDisplayName     = {#AppName}
 VersionInfoVersion       = {#AppVersion}
 VersionInfoCompany       = {#AppPublisher}
-VersionInfoDescription   = Beatz Control — Remote PC Controller
+VersionInfoDescription   = Beatz Control — Professional Remote PC Automation Suite
 VersionInfoProductName   = {#AppName}
-CloseApplications        = yes
-RestartApplications      = no
-
-; ── Signing (optional — uncomment and fill in for production) ─
-; SignTool = signtool sign /tr http://timestamp.digicert.com /td sha256 /fd sha256 /f "cert.pfx" /p "password" $f
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Messages]
-; Custom wizard page text
 WelcomeLabel1=Welcome to the {#AppName} Setup Wizard
-WelcomeLabel2=This will install {#AppName} v{#AppVersion} on your computer.%n%nBeatz Control connects to the cloud relay at backend-n4yg.onrender.com so your phone can control your PC from anywhere.%n%nClick Next to continue or Cancel to exit.
-FinishedLabel=Setup has finished installing {#AppName} on your computer.%n%nYou can launch the application from the Start Menu or the Desktop shortcut.
+WelcomeLabel2=This wizard will guide you through installing {#AppName} v{#AppVersion} on your workstation.%n%nBeatz Control pairs your PC with remote mobile clients locally over high-throughput Wi-Fi or globally via secure relay.%n%nPlease review the license agreement and choose your installation options on the next screens.
+LicenseLabel1=End User License Agreement
+LicenseLabel2=Please review the following license terms before proceeding with the installation.
+FinishedHeadingLabel=Completing the {#AppName} Setup Wizard
+FinishedLabel=Setup has successfully installed {#AppName} on your workstation.%n%nThe application can now be launched directly or accessed anytime via your Start Menu and Desktop shortcuts.
 
 [Tasks]
-; Tick boxes shown on the "Select Additional Tasks" page
-Name: "desktopicon";       Description: "Create a &Desktop shortcut";              GroupDescription: "Additional shortcuts:"; Flags: unchecked
-Name: "startupentry";      Description: "Start {#AppName} automatically with Windows"; GroupDescription: "Startup:";            Flags: unchecked
-Name: "firewallrule";      Description: "Add Windows Firewall exception (port 8080 — LAN fallback)"; GroupDescription: "Network:"; Flags: unchecked
+Name: "desktopicon";   Description: "Create a &Desktop shortcut";                      GroupDescription: "Additional shortcuts:"; Flags: unchecked
+Name: "startupentry";  Description: "Launch {#AppName} automatically on Windows logon"; GroupDescription: "System Startup:";      Flags: unchecked
+Name: "firewallrule";  Description: "Configure Windows Firewall rule for local TCP (Port 8080)"; GroupDescription: "Network Integration:"; Flags: unchecked
 
 [Files]
-; ── Main application ──────────────────────────────────────────
-Source: "..\PCControl.UI\bin\Release\net8.0-windows\*";  DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-
-; ── Optionally bundle .NET 8 runtime (if not using prerequisites) ──
-; Source: "redist\windowsdesktop-runtime-8.0.x-win-x64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
+; ── Application binaries & dependencies ──────────────────────
+Source: "..\PCControl.UI\bin\Release\net8.0-windows\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-; Start Menu shortcut
-Name: "{group}\{#AppName}";          Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\{#AppExeName}"
-Name: "{group}\Uninstall {#AppName}"; Filename: "{uninstallexe}"
+Name: "{group}\{#AppName}";           Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"
+Name: "{group}\Uninstall {#AppName}";  Filename: "{uninstallexe}"
+Name: "{autodesktop}\{#AppName}";     Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
 
-; Desktop shortcut (optional task)
-Name: "{autodesktop}\{#AppName}";    Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\{#AppExeName}"; Tasks: desktopicon
+[Registry]
+Root: HKCU; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; \
+  ValueType: string; ValueName: "{#AppName}"; \
+  ValueData: """{app}\{#AppExeName}"" --autostart --minimized"; \
+  Flags: uninsdeletevalue; Tasks: startupentry
 
 [Run]
-; Offer to launch the app after install
+; Post-installation launch prompt with progress completion
 Filename: "{app}\{#AppExeName}"; \
   Description: "Launch {#AppName} now"; \
   Flags: nowait postinstall skipifsilent
 
-[Registry]
-; Windows startup entry (optional task)
-Root: HKCU; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Run"; \
-  ValueType: string; ValueName: "{#AppName}"; \
-  ValueData: """{app}\{#AppExeName}"""; \
-  Flags: uninsdeletevalue; Tasks: startupentry
-
 [Code]
 // ──────────────────────────────────────────────────────────────
-//  Custom Pascal Script
+//  Custom Pascal Script Checks & Network Setup
 // ──────────────────────────────────────────────────────────────
 
-// Check for .NET 8 Desktop Runtime before install
 function IsDotNet8Installed(): Boolean;
 var
   Key: String;
 begin
   Key := 'SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.WindowsDesktop.App';
   Result := RegKeyExists(HKLM, Key) or RegKeyExists(HKCU, Key);
-  // Fallback: check the known install path
   if not Result then
     Result := DirExists(ExpandConstant('{pf64}\dotnet\shared\Microsoft.WindowsDesktop.App'));
 end;
@@ -129,17 +128,16 @@ begin
   Result := True;
   if not IsDotNet8Installed() then
   begin
-    Msg := '.NET 8 Desktop Runtime was not detected on this machine.' + #13#10 +
-           'Please download and install it from:' + #13#10 +
-           'https://dotnet.microsoft.com/download/dotnet/8.0' + #13#10#10 +
-           'Click OK to open the download page.';
+    Msg := '.NET 8 Desktop Runtime was not detected on this system.' + #13#10 +
+           'Beatz Control requires .NET 8 to run its modern Fluent interface.' + #13#10#10 +
+           'Click OK to visit the Microsoft download page, or Cancel to exit.';
     if MsgBox(Msg, mbInformation, MB_OKCANCEL) = IDOK then
       ShellExec('open', 'https://dotnet.microsoft.com/download/dotnet/8.0', '', '', SW_SHOWNORMAL, ewNoWait, Msg);
     Result := False;
   end;
 end;
 
-// Add firewall rule via netsh if the task was selected
+// Configure Windows Firewall rule on install if enabled
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   ResultCode: Integer;
@@ -160,7 +158,7 @@ begin
   end;
 end;
 
-// Remove firewall rule on uninstall
+// Clean up firewall rules during uninstall
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   ResultCode: Integer;
