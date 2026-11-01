@@ -1,0 +1,26 @@
+Beatz Control End User License Agreement (EULA)
+==================================================
+
+Copyright (C) 2026 Beatz Control. All rights reserved.
+
+1. GRANT OF LICENSE:
+Beatz Control grants you a personal, non-exclusive, non-transferable license
+to install and use this software on your personal computer for remote desktop
+control and media orchestration.
+
+2. SYSTEM STARTUP & BACKGROUND SERVICES:
+By enabling the background startup feature, you permit Beatz Control to initiate
+a silent background process upon Windows logon. This background service maintains
+an authenticated connection via QTcpSocket to receive your authorized remote commands.
+
+3. PRIVACY & SECURITY:
+All commands, input simulations, and telemetry packets transmitted through
+the relay connection are secured using room-based access controls and machine authentication.
+No unauthorized keystrokes or screen captures are recorded without your permission.
+
+4. DISCLAIMER OF WARRANTY:
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT.
+
+By clicking "Next" and accepting this agreement, you proceed with the installation.

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Package>
+    <DisplayName>Beatz Control Core</DisplayName>
+    <Description>Core desktop service, QTcpSocket cloud relay client, and Phone Link UI.</Description>
+    <Version>1.23.50</Version>
+    <ReleaseDate>2026-11-01</ReleaseDate>
+    <Name>com.beatzcontrol.app</Name>
+    <Default>true</Default>
+    <ForcedInstallation>true</ForcedInstallation>
+    <Essential>true</Essential>
+    <Licenses>
+        <License name="End User License Agreement (EULA)" file="license.txt" />
+    </Licenses>
+    <Script>installscript.qs</Script>
+</Package>

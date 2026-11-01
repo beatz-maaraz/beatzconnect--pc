@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Installer>
+    <Name>Beatz Control</Name>
+    <Version>1.23.50</Version>
+    <Title>Beatz Control Setup Wizard</Title>
+    <Publisher>Beatz Control</Publisher>
+    <StartMenuDir>Beatz Control</StartMenuDir>
+    <TargetDir>@ApplicationsDir@/Beatz Control</TargetDir>
+    <WizardStyle>Modern</WizardStyle>
+    <WizardDefaultWidth>680</WizardDefaultWidth>
+    <WizardDefaultHeight>480</WizardDefaultHeight>
+    <InstallerApplicationIcon>icon</InstallerApplicationIcon>
+    <InstallerWindowIcon>icon.ico</InstallerWindowIcon>
+    <RunProgram>@TargetDir@/BeatzControl.exe</RunProgram>
+    <RunProgramDescription>Launch Beatz Control now</RunProgramDescription>
+</Installer>
