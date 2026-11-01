@@ -1,0 +1,13 @@
+D:\Project\Software\PC\dist\UI\PCControl.UI.exe
+D:\Project\Software\PC\dist\UI\PCControl.UI.dll
+D:\Project\Software\PC\dist\UI\PCControl.UI.deps.json
+D:\Project\Software\PC\dist\UI\PCControl.UI.runtimeconfig.json
+D:\Project\Software\PC\dist\UI\PCControl.UI.pdb
+D:\Project\Software\PC\dist\UI\SocketIO.Core.dll
+D:\Project\Software\PC\dist\UI\SocketIO.Serializer.Core.dll
+D:\Project\Software\PC\dist\UI\SocketIO.Serializer.SystemTextJson.dll
+D:\Project\Software\PC\dist\UI\SocketIOClient.dll
+D:\Project\Software\PC\dist\UI\System.Management.dll
+D:\Project\Software\PC\dist\UI\runtimes\win\lib\net8.0\System.Management.dll
+D:\Project\Software\PC\dist\UI\PCControl.Core.dll
+D:\Project\Software\PC\dist\UI\PCControl.Core.pdb

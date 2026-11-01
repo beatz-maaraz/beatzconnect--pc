@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="PCControl.Core/PCControl.Core.csproj" />
+  <Project Path="PCControl.Service/PCControl.Service.csproj" />
+  <Project Path="PCControl.UI/PCControl.UI.csproj" />
+</Solution>

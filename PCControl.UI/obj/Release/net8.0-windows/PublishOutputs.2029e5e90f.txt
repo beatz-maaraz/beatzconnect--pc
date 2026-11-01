@@ -1,0 +1,9 @@
+D:\Project\PC\dist\UI\PCControl.UI.exe
+D:\Project\PC\dist\UI\PCControl.UI.dll
+D:\Project\PC\dist\UI\PCControl.UI.deps.json
+D:\Project\PC\dist\UI\PCControl.UI.runtimeconfig.json
+D:\Project\PC\dist\UI\PCControl.UI.pdb
+D:\Project\PC\dist\UI\System.Management.dll
+D:\Project\PC\dist\UI\runtimes\win\lib\net8.0\System.Management.dll
+D:\Project\PC\dist\UI\PCControl.Core.dll
+D:\Project\PC\dist\UI\PCControl.Core.pdb

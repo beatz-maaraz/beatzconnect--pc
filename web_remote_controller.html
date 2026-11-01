@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Mobile Remote Touchpad & Controller</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --accent: #38bdf8;
+      --accent-hover: #0ea5e9;
+      --text: #f8fafc;
+      --text-dim: #94a3b8;
+      --danger: #ef4444;
+    }
+    * {
+      box-sizing: border-box;
+      touch-action: manipulation;
+      user-select: none;
+      -webkit-user-select: none;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      padding: 12px;
+      gap: 10px;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px;
+      background: var(--card);
+      border-radius: 12px;
+      font-size: 14px;
+    }
+    .status-dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background-color: #ef4444;
+      margin-right: 6px;
+    }
+    .status-dot.connected {
+      background-color: #22c55e;
+    }
+    #trackpad {
+      flex: 1;
+      background: var(--card);
+      border-radius: 16px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      border: 2px dashed #334155;
+      position: relative;
+      touch-action: none;
+    }
+    #trackpad span {
+      color: var(--text-dim);
+      font-size: 15px;
+      pointer-events: none;
+    }
+    .btn-row {
+      display: flex;
+      gap: 8px;
+    }
+    button {
+      flex: 1;
+      background: var(--card);
+      color: var(--text);
+      border: 1px solid #334155;
+      padding: 12px;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    button:active {
+      background: var(--accent);
+      color: #0f172a;
+    }
+    .text-input-row {
+      display: flex;
+      gap: 8px;
+    }
+    input[type="text"] {
+      flex: 1;
+      background: var(--card);
+      border: 1px solid #334155;
+      color: var(--text);
+      padding: 10px 14px;
+      border-radius: 12px;
+      font-size: 15px;
+      outline: none;
+      user-select: text;
+      -webkit-user-select: text;
+    }
+    input[type="text"]:focus {
+      border-color: var(--accent);
+    }
+    .primary-btn {
+      background: var(--accent);
+      color: #0f172a;
+      border: none;
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div>
+      <span class="status-dot" id="statusDot"></span>
+      <span id="statusText">Disconnected</span>
+    </div>
+    <button style="flex:0; padding: 6px 12px; font-size: 12px;" onclick="promptConnect()">Connect</button>
+  </header>
+
+  <div id="trackpad">
+    <span>Trackpad Area</span>
+    <span style="font-size: 12px; margin-top: 4px;">Swipe to move &bull; Tap to click</span>
+  </div>
+
+  <div class="btn-row">
+    <button onclick="sendCommand('CLICK LEFT')">Left Click</button>
+    <button onclick="sendCommand('CLICK RIGHT')">Right Click</button>
+    <button onclick="sendCommand('SCROLL 150')">Scroll Up</button>
+    <button onclick="sendCommand('SCROLL -150')">Scroll Down</button>
+  </div>
+
+  <div class="text-input-row">
+    <input type="text" id="keyboardInput" placeholder="Type text to send to PC..." onkeydown="if(event.key==='Enter') sendType()">
+    <button class="primary-btn" style="flex: 0 0 80px;" onclick="sendType()">Send</button>
+  </div>
+
+  <div class="btn-row">
+    <button onclick="sendCommand('HOTKEY WIN+D')">Show Desktop</button>
+    <button onclick="sendCommand('HOTKEY ALT+TAB')">Alt + Tab</button>
+    <button onclick="sendCommand('MEDIA VOL_UP')">Vol +</button>
+    <button onclick="sendCommand('MEDIA VOL_DOWN')">Vol -</button>
+    <button onclick="sendCommand('MEDIA PLAY')">Play/Pause</button>
+  </div>
+
+  <script>
+    let ws = null;
+    let bridgeUrl = "ws://" + (location.hostname || "127.0.0.1") + ":8081";
+
+    function updateStatus(connected, text) {
+      const dot = document.getElementById('statusDot');
+      const label = document.getElementById('statusText');
+      if (connected) {
+        dot.classList.add('connected');
+        label.innerText = text || 'Connected';
+      } else {
+        dot.classList.remove('connected');
+        label.innerText = text || 'Disconnected';
+      }
+    }
+
+    function initWebSocket() {
+      try {
+        ws = new WebSocket(bridgeUrl);
+        ws.onopen = () => updateStatus(true, "Connected to PC Bridge");
+        ws.onclose = () => updateStatus(false, "Disconnected");
+        ws.onerror = () => updateStatus(false, "Connection Error");
+      } catch (e) {
+        updateStatus(false, "Error");
+      }
+    }
+
+    function promptConnect() {
+      const target = prompt("Enter Bridge WebSocket URL:", bridgeUrl);
+      if (target) {
+        bridgeUrl = target;
+        if (ws) ws.close();
+        initWebSocket();
+      }
+    }
+
+    function sendCommand(cmd) {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(cmd + "\n");
+      } else {
+        console.warn("WebSocket not connected:", cmd);
+      }
+    }
+
+    function sendType() {
+      const input = document.getElementById('keyboardInput');
+      const val = input.value;
+      if (val) {
+        sendCommand("TYPE " + val);
+        input.value = "";
+      }
+    }
+
+    // Trackpad touch event handling
+    const pad = document.getElementById('trackpad');
+    let lastX = 0;
+    let lastY = 0;
+    let touchStartTime = 0;
+    let moved = false;
+
+    pad.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 1) {
+        lastX = e.touches[0].clientX;
+        lastY = e.touches[0].clientY;
+        touchStartTime = Date.now();
+        moved = false;
+      }
+    }, { passive: false });
+
+    pad.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      if (e.touches.length === 1) {
+        const curX = e.touches[0].clientX;
+        const curY = e.touches[0].clientY;
+        const dx = Math.round((curX - lastX) * 1.5);
+        const dy = Math.round((curY - lastY) * 1.5);
+
+        if (Math.abs(dx) > 0 || Math.abs(dy) > 0) {
+          sendCommand(`MOVE ${dx} ${dy}`);
+          lastX = curX;
+          lastY = curY;
+          moved = true;
+        }
+      }
+    }, { passive: false });
+
+    pad.addEventListener('touchend', (e) => {
+      const duration = Date.now() - touchStartTime;
+      // If tap was short (<200ms) and didn't move significantly, consider it a left click
+      if (!moved && duration < 250) {
+        sendCommand('CLICK LEFT');
+      }
+    });
+
+    // Auto connect on load
+    initWebSocket();
+  </script>
+</body>
+</html>

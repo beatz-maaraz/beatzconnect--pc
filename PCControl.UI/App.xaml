@@ -1,0 +1,17 @@
+<Application x:Class="PCControl.UI.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             StartupUri="MainWindow.xaml">
+    <Application.Resources>
+        <!-- Modern ScrollBar & Theme Resources -->
+        <SolidColorBrush x:Key="BgDark" Color="#0B0F19"/>
+        <SolidColorBrush x:Key="CardDark" Color="#151D2E"/>
+        <SolidColorBrush x:Key="BorderDark" Color="#232F48"/>
+        <SolidColorBrush x:Key="AccentCyan" Color="#38BDF8"/>
+        <SolidColorBrush x:Key="AccentCyanHover" Color="#0EA5E9"/>
+        <SolidColorBrush x:Key="TextPrimary" Color="#F8FAFC"/>
+        <SolidColorBrush x:Key="TextSecondary" Color="#94A3B8"/>
+        <SolidColorBrush x:Key="StatusGreen" Color="#22C55E"/>
+        <SolidColorBrush x:Key="StatusAmber" Color="#F59E0B"/>
+    </Application.Resources>
+</Application>
