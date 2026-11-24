@@ -13,7 +13,9 @@ namespace PCControl.Service
         private readonly NativeHardwareController _hardware;
         private readonly AudioEndpointController _audio;
         private WebSocketAccessPointServer? _server;
-        private NamedPipeIpcServer? _ipcServer;
+        private LocalIpcServer? _localIpcServer;
+        private NamedPipeIpcServer? _pipeIpcServer;
+        private RelayConnectionService? _relay;
 
         public Worker(ILogger<Worker> logger, NativeHardwareController hardware, AudioEndpointController audio)
         {
@@ -29,12 +31,12 @@ namespace PCControl.Service
             _server = new WebSocketAccessPointServer(8080, _hardware, _audio);
             _server.ClientConnected += endpoint =>
             {
-                _logger.LogInformation("Mobile phone connected: {Endpoint}", endpoint);
+                _logger.LogInformation("Mobile phone connected locally: {Endpoint}", endpoint);
             };
 
             _server.ClientDisconnected += endpoint =>
             {
-                _logger.LogInformation("Mobile phone disconnected: {Endpoint}", endpoint);
+                _logger.LogInformation("Mobile phone disconnected locally: {Endpoint}", endpoint);
             };
 
             _server.CommandExecuted += (endpoint, cmd) =>
@@ -44,15 +46,33 @@ namespace PCControl.Service
 
             _server.Start();
 
-            // Start IPC server for WPF UI communication
-            _ipcServer = new NamedPipeIpcServer();
-            _ipcServer.MessageReceived += msg =>
-            {
-                _logger.LogInformation("Received IPC message from WPF UI: {Type}", msg.Type);
-            };
-            _ipcServer.Start();
+            // Start High-Speed Local IPC Server for Electron Main Process (port 28888)
+            _logger.LogInformation("Starting high-speed Local IPC Server on 127.0.0.1:28888...");
+            _localIpcServer = new LocalIpcServer(28888, _hardware, _audio, _server);
+            _localIpcServer.Start();
 
-            _logger.LogInformation("PCControl.Service is active and listening for mobile connections.");
+            // Start Relay connection to https://backend-n4yg.onrender.com
+            try
+            {
+                _logger.LogInformation("Starting Cloud Relay listener to https://backend-n4yg.onrender.com...");
+                _relay = new RelayConnectionService(_hardware, _audio, "https://backend-n4yg.onrender.com", _server);
+                _relay.StatusChanged += msg => _logger.LogInformation("[Relay] {Msg}", msg);
+                _relay.ConnectionChanged += connected =>
+                {
+                    _localIpcServer.UpdateRelayState(connected, _relay.RoomId);
+                };
+                _relay.Start();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("Relay initialization warning: {Message}", ex.Message);
+            }
+
+            // Also start Named Pipe server for compatibility
+            _pipeIpcServer = new NamedPipeIpcServer();
+            _pipeIpcServer.Start();
+
+            _logger.LogInformation("PCControl.Service is active, listening for mobile connections on 8080 and Electron IPC on 28888.");
 
             try
             {
@@ -65,7 +85,9 @@ namespace PCControl.Service
         {
             _logger.LogInformation("Stopping PCControl.Service...");
             _server?.Stop();
-            _ipcServer?.Stop();
+            _relay?.Stop();
+            _localIpcServer?.Stop();
+            _pipeIpcServer?.Stop();
             return base.StopAsync(cancellationToken);
         }
     }

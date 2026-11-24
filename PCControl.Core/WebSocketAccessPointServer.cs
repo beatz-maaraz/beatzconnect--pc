@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Security.Cryptography;
@@ -36,6 +37,21 @@ namespace PCControl.Core
         public long? hwnd { get; set; }
         public int? pid { get; set; }
         public int? level { get; set; }
+        public string? deviceName { get; set; }
+        public string? model { get; set; }
+        public int? battery { get; set; }
+        public bool? isCharging { get; set; }
+    }
+
+    public class ConnectedDeviceInfo
+    {
+        public bool IsConnected { get; set; } = false;
+        public string DeviceName { get; set; } = "No Mobile Device";
+        public string Model { get; set; } = "Awaiting Pairing";
+        public int BatteryPercentage { get; set; } = 100;
+        public bool IsCharging { get; set; } = false;
+        public string Endpoint { get; set; } = "";
+        public DateTime LastSeen { get; set; } = DateTime.MinValue;
     }
 
     public class WebSocketAccessPointServer
@@ -47,10 +63,18 @@ namespace PCControl.Core
         private CancellationTokenSource? _cts;
         private readonly ConcurrentDictionary<string, NetworkStream> _clients = new();
 
+        private UdpClient? _udpDiscoveryClient;
+        private CancellationTokenSource? _udpCts;
+
+        public ConnectedDeviceInfo CurrentDevice { get; } = new();
+
         public event Action<string>? ClientConnected;
         public event Action<string>? ClientDisconnected;
+        public event Action<ConnectedDeviceInfo>? DeviceStateChanged;
         public event Action<string, string>? CommandExecuted;
         public event Action? PacketReceived;
+
+        public void TriggerDeviceStateChanged() => DeviceStateChanged?.Invoke(CurrentDevice);
 
         public bool IsRunning { get; private set; }
         public int ConnectedClientsCount => _clients.Count;
@@ -76,6 +100,9 @@ namespace PCControl.Core
                 IsRunning = true;
 
                 Task.Run(() => AcceptLoopAsync(_cts.Token));
+
+                // Launch high-speed UDP auto-discovery on port (port + 1) e.g. 8081
+                StartUdpDiscovery();
             }
             catch (Exception ex)
             {
@@ -89,14 +116,28 @@ namespace PCControl.Core
 
             IsRunning = false;
             _cts?.Cancel();
+            _udpCts?.Cancel();
 
             try { _tcpListener?.Stop(); } catch { }
+            try { _udpDiscoveryClient?.Close(); } catch { }
 
             foreach (var stream in _clients.Values)
             {
                 try { stream.Close(); } catch { }
             }
             _clients.Clear();
+        }
+
+        public void SetSimulatedDevice(string deviceName, int batteryPercentage, bool isCharging, bool isConnected = true)
+        {
+            CurrentDevice.IsConnected = isConnected;
+            CurrentDevice.DeviceName = isConnected ? deviceName : "Disconnected";
+            CurrentDevice.Model = isConnected ? "Simulated Mobile Device" : "Awaiting Pairing";
+            CurrentDevice.BatteryPercentage = batteryPercentage;
+            CurrentDevice.IsCharging = isCharging;
+            CurrentDevice.Endpoint = isConnected ? "127.0.0.1:simulated" : "";
+            CurrentDevice.LastSeen = DateTime.UtcNow;
+            DeviceStateChanged?.Invoke(CurrentDevice);
         }
 
         private async Task AcceptLoopAsync(CancellationToken ct)
@@ -129,7 +170,15 @@ namespace PCControl.Core
             using (NetworkStream stream = client.GetStream())
             {
                 _clients[endpoint] = stream;
+                CurrentDevice.IsConnected = true;
+                CurrentDevice.Endpoint = endpoint;
+                CurrentDevice.LastSeen = DateTime.UtcNow;
+                if (CurrentDevice.DeviceName == "No Mobile Device" || CurrentDevice.DeviceName == "Disconnected")
+                {
+                    CurrentDevice.DeviceName = $"Mobile Client ({endpoint})";
+                }
                 ClientConnected?.Invoke(endpoint);
+                DeviceStateChanged?.Invoke(CurrentDevice);
 
                 try
                 {
@@ -156,6 +205,13 @@ namespace PCControl.Core
                 {
                     _clients.TryRemove(endpoint, out _);
                     ClientDisconnected?.Invoke(endpoint);
+                    if (_clients.IsEmpty)
+                    {
+                        CurrentDevice.IsConnected = false;
+                        CurrentDevice.DeviceName = "Disconnected";
+                        CurrentDevice.Endpoint = "";
+                        DeviceStateChanged?.Invoke(CurrentDevice);
+                    }
                 }
             }
         }
@@ -194,6 +250,12 @@ namespace PCControl.Core
                 int read = await stream.ReadAsync(header, 0, 2, ct);
                 if (read < 2) break;
 
+                int opcode = header[0] & 0x0F;
+                if (opcode == 0x8) // Connection Close
+                {
+                    break;
+                }
+
                 bool isMasked = (header[1] & 0x80) != 0;
                 ulong payloadLen = (ulong)(header[1] & 0x7F);
 
@@ -231,6 +293,25 @@ namespace PCControl.Core
                     {
                         payload[i] = (byte)(payload[i] ^ masks[i % 4]);
                     }
+                }
+
+                // Ping frame (0x9): Respond with Pong (0xA) immediately!
+                if (opcode == 0x9)
+                {
+                    byte[] pongHeader = new byte[] { 0x8A, (byte)payload.Length };
+                    await stream.WriteAsync(pongHeader, 0, pongHeader.Length, ct);
+                    if (payload.Length > 0)
+                    {
+                        await stream.WriteAsync(payload, 0, payload.Length, ct);
+                    }
+                    await stream.FlushAsync(ct);
+                    continue;
+                }
+
+                // Pong frame (0xA)
+                if (opcode == 0xA)
+                {
+                    continue;
                 }
 
                 string message = Encoding.UTF8.GetString(payload);
@@ -516,6 +597,34 @@ namespace PCControl.Core
                     CommandExecuted?.Invoke(endpoint, $"Power: {act}");
                     break;
 
+                case "device_info":
+                case "register":
+                case "telemetry":
+                    CurrentDevice.IsConnected = true;
+                    if (!string.IsNullOrEmpty(cmd.deviceName)) CurrentDevice.DeviceName = cmd.deviceName;
+                    if (!string.IsNullOrEmpty(cmd.model)) CurrentDevice.Model = cmd.model;
+                    if (cmd.battery.HasValue) CurrentDevice.BatteryPercentage = cmd.battery.Value;
+                    if (cmd.isCharging.HasValue) CurrentDevice.IsCharging = cmd.isCharging.Value;
+                    CurrentDevice.Endpoint = endpoint;
+                    CurrentDevice.LastSeen = DateTime.UtcNow;
+                    DeviceStateChanged?.Invoke(CurrentDevice);
+                    CommandExecuted?.Invoke(endpoint, $"Registered Device: {CurrentDevice.DeviceName} ({CurrentDevice.BatteryPercentage}%)");
+                    return JsonSerializer.Serialize(new { status = "ok", message = "device_registered" });
+
+                case "battery":
+                    if (cmd.battery.HasValue) CurrentDevice.BatteryPercentage = cmd.battery.Value;
+                    if (cmd.isCharging.HasValue) CurrentDevice.IsCharging = cmd.isCharging.Value;
+                    CurrentDevice.LastSeen = DateTime.UtcNow;
+                    DeviceStateChanged?.Invoke(CurrentDevice);
+                    CommandExecuted?.Invoke(endpoint, $"Battery update: {CurrentDevice.BatteryPercentage}% (Charging: {CurrentDevice.IsCharging})");
+                    return JsonSerializer.Serialize(new { status = "ok", battery = CurrentDevice.BatteryPercentage, isCharging = CurrentDevice.IsCharging });
+
+                case "get_device_status":
+                    return JsonSerializer.Serialize(new { 
+                        status = "ok", 
+                        device = CurrentDevice 
+                    });
+
                 case "ping":
                     return JsonSerializer.Serialize(new { status = "pong", time = DateTime.UtcNow.ToString("O") });
 
@@ -629,6 +738,118 @@ namespace PCControl.Core
                 _ when keyName.Length == 1 && char.IsLetterOrDigit(keyName[0]) => (ushort)char.ToUpper(keyName[0]),
                 _ => 0
             };
+        }
+
+        #endregion
+
+        #region UDP Auto-Discovery (Port 8081)
+
+        private void StartUdpDiscovery()
+        {
+            try
+            {
+                int discoveryPort = _port + 1; // 8081
+                _udpDiscoveryClient = new UdpClient();
+                _udpDiscoveryClient.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+                _udpDiscoveryClient.EnableBroadcast = true;
+                _udpDiscoveryClient.Client.Bind(new IPEndPoint(IPAddress.Any, discoveryPort));
+
+                _udpCts = new CancellationTokenSource();
+                Task.Run(() => RunUdpDiscoveryLoopAsync(_udpCts.Token));
+                Task.Run(() => RunUdpBeaconLoopAsync(_udpCts.Token));
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[UDP Discovery] Failed to bind port {_port + 1}: {ex.Message}");
+            }
+        }
+
+        private async Task RunUdpDiscoveryLoopAsync(CancellationToken ct)
+        {
+            while (!ct.IsCancellationRequested && IsRunning)
+            {
+                try
+                {
+                    var result = await _udpDiscoveryClient!.ReceiveAsync(ct);
+                    string msg = Encoding.UTF8.GetString(result.Buffer);
+
+                    if (msg.Contains("ZPC_DISCOVER", StringComparison.OrdinalIgnoreCase) ||
+                        msg.Contains("DISCOVER", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string localIp = GetBestLocalIPv4Address();
+                        string responseStr = $"ZPC_RESPONSE:ws://{localIp}:{_port}";
+                        byte[] respBytes = Encoding.UTF8.GetBytes(responseStr);
+
+                        await _udpDiscoveryClient.SendAsync(respBytes, respBytes.Length, result.RemoteEndPoint);
+                        System.Diagnostics.Debug.WriteLine($"[UDP Discovery] Responded to {result.RemoteEndPoint} with {responseStr}");
+                    }
+                }
+                catch when (ct.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch
+                {
+                    if (!IsRunning) break;
+                    await Task.Delay(200, ct);
+                }
+            }
+        }
+
+        private async Task RunUdpBeaconLoopAsync(CancellationToken ct)
+        {
+            int discoveryPort = _port + 1;
+            var broadcastEp = new IPEndPoint(IPAddress.Broadcast, discoveryPort);
+
+            while (!ct.IsCancellationRequested && IsRunning)
+            {
+                try
+                {
+                    string localIp = GetBestLocalIPv4Address();
+                    if (!string.IsNullOrEmpty(localIp) && localIp != "127.0.0.1")
+                    {
+                        string beaconStr = $"ZPC_RESPONSE:ws://{localIp}:{_port}";
+                        byte[] beaconBytes = Encoding.UTF8.GetBytes(beaconStr);
+                        await _udpDiscoveryClient!.SendAsync(beaconBytes, beaconBytes.Length, broadcastEp);
+                    }
+                }
+                catch { }
+
+                try
+                {
+                    await Task.Delay(2500, ct);
+                }
+                catch when (ct.IsCancellationRequested) { break; }
+            }
+        }
+
+        public static string GetBestLocalIPv4Address()
+        {
+            try
+            {
+                foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
+                {
+                    if (ni.OperationalStatus != OperationalStatus.Up ||
+                        ni.NetworkInterfaceType == NetworkInterfaceType.Loopback)
+                        continue;
+
+                    var ipProps = ni.GetIPProperties();
+                    foreach (var addr in ipProps.UnicastAddresses)
+                    {
+                        if (addr.Address.AddressFamily == AddressFamily.InterNetwork &&
+                            !IPAddress.IsLoopback(addr.Address))
+                        {
+                            string ip = addr.Address.ToString();
+                            if (!ip.StartsWith("169.254.")) // Ignore APIPA
+                            {
+                                return ip;
+                            }
+                        }
+                    }
+                }
+            }
+            catch { }
+            return "127.0.0.1";
         }
 
         #endregion

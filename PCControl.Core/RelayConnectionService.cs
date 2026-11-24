@@ -63,7 +63,8 @@ namespace PCControl.Core
         public RelayConnectionService(
             NativeHardwareController hardware,
             AudioEndpointController  audio,
-            string?                  relayUrl = null)
+            string?                  relayUrl = null,
+            WebSocketAccessPointServer? commandProcessor = null)
         {
             _hardware = hardware;
             _audio    = audio;
@@ -72,8 +73,7 @@ namespace PCControl.Core
             // Stable ID: lowercase machine name, no spaces
             _pcId = Environment.MachineName.ToLowerInvariant().Replace(" ", "_");
 
-            // Reuse existing command-dispatch logic; port 0 = no local listener
-            _commandProcessor = new WebSocketAccessPointServer(0, _hardware, _audio);
+            _commandProcessor = commandProcessor ?? new WebSocketAccessPointServer(0, _hardware, _audio);
             _commandProcessor.CommandExecuted += (ep, cmd) => CommandExecuted?.Invoke(ep, cmd);
         }
 
@@ -151,8 +151,12 @@ namespace PCControl.Core
             _socket.On("mouse-scroll",   OnMouseScroll);
             _socket.On("volume-change",  OnVolumeChange);
             _socket.On("control-event",  OnControlEvent);
-            _socket.On("mobile_joined",  resp => Notify($"Mobile joined: {SafeGetString(resp, "mobileId")}"));
-            _socket.On("mobile_left",    resp => Notify($"Mobile disconnected: {SafeGetString(resp, "mobileId")}"));
+            _socket.On("mobile_joined",  OnMobileJoined);
+            _socket.On("mobile_left",    OnMobileLeft);
+            _socket.On("device_info",    resp => OnTelemetryReceived(resp));
+            _socket.On("device-info",    resp => OnTelemetryReceived(resp));
+            _socket.On("battery",        resp => OnTelemetryReceived(resp));
+            _socket.On("telemetry",      resp => OnTelemetryReceived(resp));
             _socket.On("ping",           OnPing);
 
             // ── Connect ──────────────────────────────────────────────────
@@ -183,18 +187,10 @@ namespace PCControl.Core
             IsConnected = true;
             _retryMs    = ReconnectBaseMs;
             Notify("Socket connected — registering PC…");
-            ConnectionChanged?.Invoke(true);
 
             try
             {
-                // Emit both 'pc-register' (Render standard) and 'register_pc' (legacy)
                 await _socket!.EmitAsync("pc-register", new
-                {
-                    pcId    = _pcId,
-                    pcName  = Environment.MachineName,
-                    version = "2.0"
-                });
-                await _socket!.EmitAsync("register_pc", new
                 {
                     pcId    = _pcId,
                     pcName  = Environment.MachineName,
@@ -222,12 +218,92 @@ namespace PCControl.Core
                 RoomId    = data.TryGetProperty("roomId",  out var r) ? r.GetString() ?? _pcId : _pcId;
                 string id = data.TryGetProperty("pcId",    out var p) ? p.GetString() ?? _pcId : _pcId;
                 Notify($"Registered ✓  Room: {RoomId}  |  PC ID: {id}");
+                ConnectionChanged?.Invoke(true);
             }
             catch
             {
                 RoomId = _pcId;
                 Notify($"Registered (fallback room: {RoomId})");
+                ConnectionChanged?.Invoke(true);
             }
+        }
+
+        private void OnMobileJoined(SocketIOResponse resp)
+        {
+            try
+            {
+                var payload = resp.GetValue<JsonElement>(0);
+                string mobId = payload.TryGetProperty("mobileId", out var idProp) ? idProp.GetString() ?? "?" : "?";
+                string devName = payload.TryGetProperty("deviceName", out var dnProp) ? dnProp.GetString() ?? "" : "";
+                if (string.IsNullOrWhiteSpace(devName) && payload.TryGetProperty("mobileName", out var mnProp))
+                    devName = mnProp.GetString() ?? "";
+
+                if (string.IsNullOrWhiteSpace(devName)) devName = $"Mobile ({mobId.Substring(0, Math.Min(5, mobId.Length))})";
+
+                _commandProcessor.CurrentDevice.IsConnected = true;
+                _commandProcessor.CurrentDevice.DeviceName = devName;
+                _commandProcessor.CurrentDevice.Model = "Connected via Cloud Relay";
+                _commandProcessor.CurrentDevice.Endpoint = $"Relay ({mobId})";
+                _commandProcessor.CurrentDevice.LastSeen = DateTime.UtcNow;
+
+                _commandProcessor.TriggerDeviceStateChanged();
+                Notify($"Mobile joined via Relay: {devName} ({mobId})");
+
+                SendPcStateToRelay();
+            }
+            catch (Exception ex)
+            {
+                Notify($"mobile_joined error: {ex.Message}");
+            }
+        }
+
+        private void OnMobileLeft(SocketIOResponse resp)
+        {
+            try
+            {
+                _commandProcessor.CurrentDevice.IsConnected = false;
+                _commandProcessor.CurrentDevice.DeviceName = "Disconnected";
+                _commandProcessor.CurrentDevice.Endpoint = "";
+                _commandProcessor.TriggerDeviceStateChanged();
+                Notify("Mobile disconnected from Relay.");
+            }
+            catch { }
+        }
+
+        private void OnTelemetryReceived(SocketIOResponse resp)
+        {
+            try
+            {
+                var payload = resp.GetValue<JsonElement>(0);
+                string rawJson = payload.GetRawText();
+                PacketCount++;
+                PacketReceived?.Invoke();
+                _commandProcessor.ExecuteCommandPayload(rawJson, "relay");
+            }
+            catch (Exception ex)
+            {
+                Notify($"Telemetry error: {ex.Message}");
+            }
+        }
+
+        public void SendPcStateToRelay()
+        {
+            if (_socket?.Connected != true) return;
+            try
+            {
+                var (resW, resH) = _hardware.GetScreenResolution();
+                _ = _socket.EmitAsync("pc-state", new
+                {
+                    pcId        = _pcId,
+                    pcName      = Environment.MachineName,
+                    volume      = _audio.GetMasterVolumePercent(),
+                    isMuted     = _audio.GetMute(),
+                    resolution  = $"{resW}x{resH}",
+                    status      = "online",
+                    timestamp   = DateTime.UtcNow.ToString("O")
+                });
+            }
+            catch { }
         }
 
         private void OnTrackpadMove(SocketIOResponse resp)

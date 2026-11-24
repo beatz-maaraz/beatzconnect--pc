@@ -6,7 +6,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <OutputType>WinExe</OutputType>
     <RootNamespace>PCControl.Service</RootNamespace>
-    <AssemblyName>PCControl.Service</AssemblyName>
+    <AssemblyName>BeatzConnect</AssemblyName>
+    <Version>3.1.0</Version>
+    <AssemblyVersion>3.1.0.0</AssemblyVersion>
+    <FileVersion>3.1.0.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>

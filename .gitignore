@@ -9,3 +9,7 @@ update_ui.py
 # .NET artifacts
 **/bin/
 **/obj/
+dist/
+**/node_modules/
+*.blockmap
+

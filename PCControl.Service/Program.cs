@@ -10,12 +10,31 @@ namespace PCControl.Service
 {
     public class Program
     {
+        private static Mutex? _singleInstanceMutex;
+
         public static void Main(string[] args)
         {
+            // Single-Instance Named Mutex (Global\BeatzConnectMutex)
+            bool createdNew;
+            try
+            {
+                _singleInstanceMutex = new Mutex(true, @"Global\BeatzConnectMutex", out createdNew);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                _singleInstanceMutex = new Mutex(true, @"BeatzConnectMutex", out createdNew);
+            }
+
+            if (!createdNew)
+            {
+                // Another instance of the backend is already running; exit duplicate cleanly.
+                return;
+            }
+
             if (args.Length > 0)
             {
                 string cmd = args[0].ToLowerInvariant();
-                string exePath = Process.GetCurrentProcess().MainModule?.FileName ?? Assembly.GetExecutingAssembly().Location;
+                string exePath = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName ?? AppContext.BaseDirectory;
                 exePath = exePath.Replace(".dll", ".exe");
 
                 switch (cmd)

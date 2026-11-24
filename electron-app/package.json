@@ -1,0 +1,50 @@
+{
+  "name": "beatz-control",
+  "productName": "Beatz Control",
+  "version": "2.0.0",
+  "description": "Windows PC Companion Application with Zero-Latency Mobile Control",
+  "main": "main.js",
+  "author": "Beatz Control Technologies",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.beatzcontrol.companion",
+    "productName": "Beatz Control",
+    "directories": {
+      "output": "../dist/Installer"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Beatz Control",
+      "include": "installer.nsh"
+    },
+    "extraResources": [
+      {
+        "from": "../PCControl.Service/bin/Release/net8.0-windows/win-x64/publish",
+        "to": "backend",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ]
+  }
+}
+

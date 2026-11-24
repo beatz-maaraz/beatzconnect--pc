@@ -1,84 +1,50 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Net.WebSockets;
 using System.Runtime.InteropServices;
+using System.Text;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
-using System.Windows.Media.Animation;
-using System.Windows.Media.Effects;
 using System.Windows.Threading;
 using Forms = System.Windows.Forms;
-using PCControl.Core;
 using Microsoft.Win32;
+using PCControl.Core;
 
 namespace PCControl.UI
 {
     public partial class MainWindow : Window
     {
-        #region Win32 Window Backdrop & Blur Interop
+        #region Win32 Window Backdrop & Immersive Dark Mode
         [DllImport("dwmapi.dll")]
         private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
 
-        [DllImport("user32.dll")]
-        private static extern int SetWindowCompositionAttribute(IntPtr hwnd, ref WindowCompositionAttributeData data);
-
         private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
         private const int DWMWA_SYSTEMBACKDROP_TYPE = 38; // Windows 11 22H2+ Mica/Acrylic
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct WindowCompositionAttributeData
-        {
-            public WindowCompositionAttribute Attribute;
-            public IntPtr Data;
-            public int SizeOfData;
-        }
-
-        private enum WindowCompositionAttribute
-        {
-            WCA_ACCENT_POLICY = 19
-        }
-
-        private enum AccentState
-        {
-            ACCENT_DISABLED = 0,
-            ACCENT_ENABLE_GRADIENT = 1,
-            ACCENT_ENABLE_TRANSPARENTGRADIENT = 2,
-            ACCENT_ENABLE_BLURBEHIND = 3,
-            ACCENT_ENABLE_ACRYLICBLURBEHIND = 4,
-            ACCENT_INVALID_STATE = 5
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct AccentPolicy
-        {
-            public AccentState AccentState;
-            public int AccentFlags;
-            public int GradientColor;
-            public int AnimationId;
-        }
         #endregion
 
-        // ─── Core services ────────────────────────────────────────────────
+        // ─── Local Fallback Controllers ──────────────────────────────────
         private readonly NativeHardwareController _hardware;
         private readonly AudioEndpointController  _audio;
-        private RelayConnectionService?           _relay;
-        private WebSocketAccessPointServer?       _localServer;
 
-        // ─── UI helpers ───────────────────────────────────────────────────
+        // ─── High-Speed IPC WebSocket Bridge ─────────────────────────────
+        private ClientWebSocket? _ipcClient;
+        private CancellationTokenSource? _ipcTokenSource;
+        private bool _isIpcConnected;
+        private readonly Uri _ipcUri = new("ws://127.0.0.1:28888/");
+
+        // ─── UI & System Tray Helpers ─────────────────────────────────────
         private Forms.NotifyIcon? _notifyIcon;
-        private DispatcherTimer?  _telemetryTimer;
+        private DispatcherTimer?  _glanceClockTimer;
         private bool              _isActualClose;
-        private bool              _isHotspotRunning;
-        private System.Windows.Point _lastTrackpadPt;
-        private bool              _isMinimizing;
+        private bool              _isUserDraggingSlider;
 
-        // ─── Configuration ────────────────────────────────────────────────
-        private const string DefaultRelayUrl = RelayConnectionService.DefaultRelayUrl;
-
-        // ─────────────────────────────────────────────────────────────────
         public MainWindow()
         {
             _hardware = new NativeHardwareController();
@@ -87,11 +53,12 @@ namespace PCControl.UI
             InitializeComponent();
 
             Loaded += MainWindow_Loaded;
+            Closing += MainWindow_Closing;
+
+            InitializeGlanceClock();
             InitializeSystemTray();
-            PopulatePcInfo();
-            InitializeLocalServer();
-            InitializeRelayService(DefaultRelayUrl);
-            StartTelemetryTimer();
+            PopulateSystemInfo();
+            StartIpcBridgeLoop();
         }
 
         private void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -114,25 +81,27 @@ namespace PCControl.UI
 
             if (silentStartup)
             {
-                // Start silently in the background / system tray
                 Hide();
                 WindowState = WindowState.Minimized;
                 _notifyIcon?.ShowBalloonTip(2000, "Beatz Control",
-                    "Started silently in background — connected to relay.",
+                    "Started silently in background — connected to service.",
                     Forms.ToolTipIcon.Info);
+            }
+        }
+
+        private void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
+        {
+            if (!_isActualClose && (ChkCloseToTray?.IsChecked == true))
+            {
+                e.Cancel = true;
+                Hide();
+                _notifyIcon?.ShowBalloonTip(1500, "Beatz Control", "Minimized to system tray.", Forms.ToolTipIcon.Info);
             }
             else
             {
-                PlayWindowEntranceAnimation();
-            }
-
-            // Wire startup mode UI indicators
-            if (silentStartup)
-            {
-                BannerAutostart.Visibility   = Visibility.Visible;
-                BadgeStartupMode.Visibility  = Visibility.Visible;
-                TxtStartupModeBar.Text       = "Auto-started (silent)";
-                TxtStartupModeBar.Foreground = new SolidColorBrush(Color.FromRgb(16, 185, 129));
+                _notifyIcon?.Dispose();
+                _notifyIcon = null;
+                _ipcTokenSource?.Cancel();
             }
         }
 
@@ -143,641 +112,476 @@ namespace PCControl.UI
                 var hwnd = new WindowInteropHelper(this).Handle;
                 if (hwnd == IntPtr.Zero) return;
 
-                // 1. Enable Immersive Dark Mode for Win32 frame/system elements
                 int darkMode = 1;
                 DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref darkMode, sizeof(int));
 
-                // 2. Try Windows 11 DWM Acrylic backdrop (DWMWA_SYSTEMBACKDROP_TYPE = 3 for Acrylic, 2 for Mica)
-                int backdropType = 3; // Acrylic
-                int res = DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, ref backdropType, sizeof(int));
-
-                // 3. Fallback to AccentPolicy Acrylic blur behind for Win10 / older Win11 builds
-                if (res != 0)
-                {
-                    var policy = new AccentPolicy
-                    {
-                        AccentState = AccentState.ACCENT_ENABLE_ACRYLICBLURBEHIND,
-                        AccentFlags = 2,
-                        GradientColor = unchecked((int)0xC8080E1A) // Semi-transparent dark slate tint
-                    };
-
-                    int size = Marshal.SizeOf(policy);
-                    IntPtr pPolicy = Marshal.AllocHGlobal(size);
-                    try
-                    {
-                        Marshal.StructureToPtr(policy, pPolicy, false);
-                        var data = new WindowCompositionAttributeData
-                        {
-                            Attribute = WindowCompositionAttribute.WCA_ACCENT_POLICY,
-                            SizeOfData = size,
-                            Data = pPolicy
-                        };
-                        SetWindowCompositionAttribute(hwnd, ref data);
-                    }
-                    finally
-                    {
-                        Marshal.FreeHGlobal(pPolicy);
-                    }
-                }
+                int backdropType = 2; // Mica
+                DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, ref backdropType, sizeof(int));
             }
-            catch
-            {
-                // Graceful fallback to rich WPF dark acrylic gradients
-            }
+            catch { }
         }
 
-        private void PlayWindowEntranceAnimation()
+        private void InitializeGlanceClock()
         {
-            var fadeIn = new DoubleAnimation(0.0, 1.0, TimeSpan.FromMilliseconds(280))
+            _glanceClockTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+            _glanceClockTimer.Tick += (s, e) =>
             {
-                EasingFunction = new QuarticEase { EasingMode = EasingMode.EaseOut }
+                TxtGlanceClock.Text = DateTime.Now.ToString("HH:mm");
             };
-            BeginAnimation(OpacityProperty, fadeIn);
-        }
-
-        // ─── Initialisation ───────────────────────────────────────────────
-
-        private void PopulatePcInfo()
-        {
-            TxtPcName.Text = AccessPointManager.GetMachineName();
-
-            var (resW, resH) = _hardware.GetScreenResolution();
-            TxtResolution.Text = $"{resW} × {resH}";
-
-            int vol = _audio.GetMasterVolumePercent();
-            SliderVolume.Value      = vol;
-            TxtVolumePercent.Text   = $"{vol}%";
-
-            // Pre-populate the relay URL text box in Settings tab.
-            TxtRelayUrlInput.Text = RelayConnectionService.DefaultRelayUrl;
-
-            // Detect current startup registry state and pre-populate the checkbox
-            using var runKey = Registry.CurrentUser.OpenSubKey(
-                @"SOFTWARE\Microsoft\Windows\CurrentVersion\Run");
-            bool startupEnabled = runKey?.GetValue("BeatzControl") != null;
-            ChkStartWithWindows.IsChecked = startupEnabled;
-        }
-
-        private void InitializeLocalServer()
-        {
-            try
-            {
-                _localServer = new WebSocketAccessPointServer(8080, _hardware, _audio);
-                _localServer.ClientConnected += endpoint => Log($"LAN client connected: {endpoint}");
-                _localServer.ClientDisconnected += endpoint => Log($"LAN client disconnected: {endpoint}");
-                _localServer.CommandExecuted += (endpoint, cmd) => Log($"[LAN {endpoint}] {cmd}");
-                _localServer.Start();
-                Log("Local LAN/Hotspot server listening on port 8080.");
-            }
-            catch (Exception ex)
-            {
-                Log($"Local server initialization note: {ex.Message}");
-            }
-        }
-
-        private void InitializeRelayService(string relayUrl)
-        {
-            // Tear down any previous service before creating a new one.
-            if (_relay != null)
-            {
-                _relay.StatusChanged      -= OnRelayStatusChanged;
-                _relay.ConnectionChanged  -= OnRelayConnectionChanged;
-                _relay.PacketReceived     -= OnPacketReceived;
-                _relay.CommandExecuted    -= OnCommandExecuted;
-                _relay.Stop();
-                _relay.Dispose();
-            }
-
-            _relay = new RelayConnectionService(_hardware, _audio, relayUrl);
-            _relay.StatusChanged      += OnRelayStatusChanged;
-            _relay.ConnectionChanged  += OnRelayConnectionChanged;
-            _relay.PacketReceived     += OnPacketReceived;
-            _relay.CommandExecuted    += OnCommandExecuted;
-
-            SetConnectionUI(false, "Connecting…");
-            _relay.Start();
-
-            Log($"Relay service started → {relayUrl}");
+            _glanceClockTimer.Start();
+            TxtGlanceClock.Text = DateTime.Now.ToString("HH:mm");
         }
 
         private void InitializeSystemTray()
         {
             _notifyIcon = new Forms.NotifyIcon
             {
-                Text    = "Beatz Control",
-                Icon    = System.Drawing.SystemIcons.Application,
+                Text = "Beatz Control (Companion)",
+                Icon = System.Drawing.SystemIcons.Application,
                 Visible = true
             };
 
-            var menu = new Forms.ContextMenuStrip();
-            menu.Items.Add("Open Beatz Control",    null, (_, __) => ShowAndActivate());
-            menu.Items.Add("Lock Workstation",       null, (_, __) => _hardware.LockScreen());
-            menu.Items.Add("Toggle Hotspot",         null, (_, __) => BtnToggleHotspot_Click(null!, null!));
-            menu.Items.Add(new Forms.ToolStripSeparator());
-            menu.Items.Add("Exit",                   null, (_, __) => ExitApp());
-
-            _notifyIcon.ContextMenuStrip = menu;
-            _notifyIcon.DoubleClick     += (_, __) => ShowAndActivate();
-        }
-
-        private void StartTelemetryTimer()
-        {
-            _telemetryTimer = new DispatcherTimer
+            var contextMenu = new Forms.ContextMenuStrip();
+            contextMenu.Items.Add("Open Dashboard", null, (s, e) =>
             {
-                Interval = TimeSpan.FromMilliseconds(150)
+                Show();
+                WindowState = WindowState.Normal;
+                Activate();
+            });
+            contextMenu.Items.Add("Reconnect IPC", null, (s, e) =>
+            {
+                StartIpcBridgeLoop();
+            });
+            contextMenu.Items.Add("-");
+            contextMenu.Items.Add("Exit Beatz Control", null, (s, e) =>
+            {
+                _isActualClose = true;
+                Close();
+            });
+
+            _notifyIcon.ContextMenuStrip = contextMenu;
+            _notifyIcon.DoubleClick += (s, e) =>
+            {
+                Show();
+                WindowState = WindowState.Normal;
+                Activate();
             };
-            _telemetryTimer.Tick += (_, __) =>
-            {
-                var (cx, cy) = _hardware.GetMousePosition();
-                TxtCursorCoords.Text  = $"{cx}, {cy}";
-                BadgeMuted.Visibility = _audio.GetMute() ? Visibility.Visible : Visibility.Collapsed;
-            };
-            _telemetryTimer.Start();
         }
 
-        // ─── Relay Event Handlers ─────────────────────────────────────────
-
-        private void OnRelayStatusChanged(string message)
+        private void PopulateSystemInfo()
         {
-            Dispatcher.InvokeAsync(() =>
+            TxtTelemetryHost.Text = AccessPointManager.GetMachineName();
+            TxtTelemetryUser.Text = Environment.UserName;
+            TxtRelayUrlInput.Text = RelayConnectionService.DefaultRelayUrl;
+
+            // Pre-read local volume
+            try
             {
-                TxtRelayDetail.Text  = message;
-                TxtStatusBar.Text    = message;
-                Log($"[Relay] {message}");
-            });
+                int vol = _audio.GetMasterVolumePercent();
+                SliderVolume.Value = vol;
+                TxtVolumeBadge.Text = $"{vol}%";
+            }
+            catch { }
+
+            // Registry auto-start check
+            try
+            {
+                using var runKey = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run");
+                ChkStartWithWindows.IsChecked = runKey?.GetValue("BeatzControl") != null;
+            }
+            catch { }
         }
 
-        private void OnRelayConnectionChanged(bool connected)
+        // ─────────────────────────────────────────────────────────────
+        // ZERO-LATENCY IPC CLIENT BRIDGE
+        // ─────────────────────────────────────────────────────────────
+        private void StartIpcBridgeLoop()
         {
-            Dispatcher.InvokeAsync(() =>
-            {
-                SetConnectionUI(connected, connected ? "Connected to relay" : "Disconnected");
+            _ipcTokenSource?.Cancel();
+            _ipcTokenSource = new CancellationTokenSource();
+            var token = _ipcTokenSource.Token;
 
-                if (_relay is not null)
+            Task.Run(async () =>
+            {
+                while (!token.IsCancellationRequested)
                 {
-                    TxtRoomId.Text     = _relay.RoomId;
-                    TxtRoomIdFull.Text = _relay.RoomId;
+                    try
+                    {
+                        _ipcClient?.Dispose();
+                        _ipcClient = new ClientWebSocket();
+
+                        var sw = Stopwatch.StartNew();
+                        await _ipcClient.ConnectAsync(_ipcUri, token);
+                        sw.Stop();
+
+                        _isIpcConnected = true;
+                        long latency = Math.Max(1, sw.ElapsedMilliseconds);
+
+                        Dispatcher.Invoke(() =>
+                        {
+                            TxtIpcStatus.Text = $"Connected • {latency}ms";
+                            DotIpcStatus.Fill = (SolidColorBrush)FindResource("StateSuccess");
+                            TxtTelemetryIpc.Text = $"{latency} ms (WebSocket IPC)";
+                            Log($"Zero-latency IPC connection established to background service in {latency}ms.");
+                        });
+
+                        // Request initial snapshot
+                        await SendIpcCommandAsync(new { type = "get_state" });
+
+                        // Listen loop
+                        var buffer = new byte[8192];
+                        while (_ipcClient.State == WebSocketState.Open && !token.IsCancellationRequested)
+                        {
+                            var result = await _ipcClient.ReceiveAsync(new ArraySegment<byte>(buffer), token);
+                            if (result.MessageType == WebSocketMessageType.Close) break;
+
+                            string json = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                            ProcessIpcMessage(json);
+                        }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
+                    catch (Exception)
+                    {
+                        _isIpcConnected = false;
+                        Dispatcher.Invoke(() =>
+                        {
+                            TxtIpcStatus.Text = "Connecting…";
+                            DotIpcStatus.Fill = (SolidColorBrush)FindResource("StateWarning");
+                            TxtTelemetryIpc.Text = "Reconnecting…";
+                        });
+                        await Task.Delay(2000, token);
+                    }
                 }
+            }, token);
+        }
 
-                if (connected)
+        private async Task SendIpcCommandAsync(object commandObj)
+        {
+            if (_ipcClient?.State == WebSocketState.Open)
+            {
+                try
                 {
-                    _notifyIcon?.ShowBalloonTip(3000, "Beatz Control",
-                        $"Connected to relay.  Room: {_relay?.RoomId}", Forms.ToolTipIcon.Info);
+                    string json = JsonSerializer.Serialize(commandObj);
+                    byte[] bytes = Encoding.UTF8.GetBytes(json);
+                    await _ipcClient.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
+                    return;
                 }
-            });
+                catch { }
+            }
+
+            // Fallback direct execution if IPC service is not running
+            ExecuteDirectFallback(commandObj);
         }
 
-        private void OnPacketReceived()
+        private void ExecuteDirectFallback(object commandObj)
         {
-            Dispatcher.InvokeAsync(() =>
+            try
             {
-                TxtPacketCount.Text = (_relay?.PacketCount ?? 0).ToString("N0");
+                using var doc = JsonDocument.Parse(JsonSerializer.Serialize(commandObj));
+                string type = doc.RootElement.GetProperty("type").GetString() ?? "";
 
-                // Brief pulse: green flash → back to cyan
-                DotPulse.Fill = new SolidColorBrush(Color.FromRgb(16, 185, 129));
-                var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(120) };
-                t.Tick += (_, __) =>
+                switch (type)
                 {
-                    DotPulse.Fill = new SolidColorBrush(Color.FromRgb(34, 211, 238));
-                    t.Stop();
-                };
-                t.Start();
-            });
-        }
-
-        private void OnCommandExecuted(string endpoint, string description)
-        {
-            Dispatcher.InvokeAsync(() => Log($"[{endpoint}] {description}"));
-        }
-
-        // ─── UI helpers ───────────────────────────────────────────────────
-
-        private void SetConnectionUI(bool connected, string statusText)
-        {
-            if (connected)
+                    case "set_volume":
+                        if (doc.RootElement.TryGetProperty("volume", out var volProp))
+                        {
+                            _audio.SetMasterVolumePercent(volProp.GetInt32());
+                        }
+                        break;
+                    case "toggle_mute":
+                        _audio.ToggleMute();
+                        break;
+                    case "lock_pc":
+                        _hardware.LockScreen();
+                        break;
+                    case "sleep":
+                        _hardware.SleepComputer();
+                        break;
+                    case "restart":
+                        _hardware.RestartComputer();
+                        break;
+                    case "shutdown":
+                        _hardware.ShutdownComputer();
+                        break;
+                }
+            }
+            catch (Exception ex)
             {
-                BadgeRelay.Background   = new SolidColorBrush(Color.FromRgb(10, 30, 20));
-                BadgeRelay.BorderBrush  = new SolidColorBrush(Color.FromRgb(16, 185, 129));
-                DotStatus.Fill          = new SolidColorBrush(Color.FromRgb(16, 185, 129));
-                DotStatusBar.Fill       = new SolidColorBrush(Color.FromRgb(16, 185, 129));
-                ((DropShadowEffect)DotStatus.Effect).Color = Color.FromRgb(16, 185, 129);
+                Log($"Direct fallback execution note: {ex.Message}");
+            }
+        }
+
+        private void ProcessIpcMessage(string json)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+                string type = root.TryGetProperty("type", out var tProp) ? tProp.GetString() ?? "" : "";
+
+                if (type == "state_update" && root.TryGetProperty("state", out var state))
+                {
+                    Dispatcher.Invoke(() => RenderTelemetryState(state));
+                }
+                else if (type == "event" && root.TryGetProperty("message", out var msgProp))
+                {
+                    Dispatcher.Invoke(() => Log($"[Service] {msgProp.GetString()}"));
+                }
+            }
+            catch { }
+        }
+
+        private void RenderTelemetryState(JsonElement state)
+        {
+            bool isConn = state.TryGetProperty("isConnected", out var icProp) && icProp.GetBoolean();
+            string dName = state.TryGetProperty("deviceName", out var dnProp) ? dnProp.GetString() ?? "" : "";
+            if (string.IsNullOrWhiteSpace(dName)) dName = isConn ? "Samsung Galaxy S24 Ultra" : "No Device Connected";
+
+            TxtSidebarDeviceName.Text = dName;
+            TxtHeaderDeviceName.Text  = dName;
+            TxtHeroTitle.Text         = isConn ? dName : "Waiting for Device";
+
+            if (isConn)
+            {
+                TxtSidebarConn.Text = "Connected (Wi-Fi & Relay)";
+                DotSidebarConn.Fill = (SolidColorBrush)FindResource("StateSuccess");
+                TxtHeroConnState.Text = "CONNECTED & ACTIVE";
+                BadgeHeroConnState.Background = new SolidColorBrush(Color.FromArgb(0x26, 0x10, 0xB9, 0x81));
+                TxtHeroConnState.Foreground = new SolidColorBrush(Color.FromRgb(0x34, 0xD3, 0x99));
+                TxtHeroDesc.Text = "Your mobile device is actively connected. High-throughput remote control, audio sync, and instant notifications are active with zero latency.";
             }
             else
             {
-                BadgeRelay.Background   = new SolidColorBrush(Color.FromRgb(26, 16, 0));
-                BadgeRelay.BorderBrush  = new SolidColorBrush(Color.FromRgb(245, 158, 11));
-                DotStatus.Fill          = new SolidColorBrush(Color.FromRgb(245, 158, 11));
-                DotStatusBar.Fill       = new SolidColorBrush(Color.FromRgb(245, 158, 11));
-                ((DropShadowEffect)DotStatus.Effect).Color = Color.FromRgb(245, 158, 11);
+                TxtSidebarConn.Text = "Awaiting pairing…";
+                DotSidebarConn.Fill = (SolidColorBrush)FindResource("TextTertiary");
+                TxtHeroConnState.Text = "SEARCHING FOR PHONE";
+                BadgeHeroConnState.Background = new SolidColorBrush(Color.FromArgb(0x26, 0xF5, 0x9E, 0x0B));
+                TxtHeroConnState.Foreground = new SolidColorBrush(Color.FromRgb(0xFC, 0xD3, 0x4D));
+                TxtHeroDesc.Text = "Awaiting companion connection. Pair the mobile app on your local Wi-Fi or via the secure cloud relay to enable remote control, audio sync, and instant notifications.";
             }
 
-            TxtRelayStatus.Text  = statusText;
-            TxtStatusBar.Text    = statusText;
-        }
-
-        private void ShowAndActivate()
-        {
-            Show();
-            WindowState = WindowState.Normal;
-            Activate();
-
-            // Smooth restore animation
-            var restoreAnim = new DoubleAnimation(0.2, 1.0, TimeSpan.FromMilliseconds(220))
+            // Battery Level
+            if (state.TryGetProperty("batteryPercentage", out var bpProp))
             {
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-            };
-            BeginAnimation(OpacityProperty, restoreAnim);
-        }
+                int bat = Math.Clamp(bpProp.GetInt32(), 0, 100);
+                TxtSidebarBattery.Text = $"{bat}%";
+                TxtHeroBatteryNum.Text = $"{bat}%";
+                BarSidebarBattery.Width = Math.Max(2, (18.0 * bat) / 100.0);
 
-        private void ExitApp()
-        {
-            _isActualClose = true;
-            _telemetryTimer?.Stop();
-            _localServer?.Stop();
-            _relay?.Stop();
-            _relay?.Dispose();
-
-            if (_notifyIcon != null)
-            {
-                _notifyIcon.Visible = false;
-                _notifyIcon.Dispose();
+                if (bat <= 20) BarSidebarBattery.Background = (SolidColorBrush)FindResource("StateDanger");
+                else if (bat <= 50) BarSidebarBattery.Background = (SolidColorBrush)FindResource("StateWarning");
+                else BarSidebarBattery.Background = (SolidColorBrush)FindResource("StateSuccess");
             }
 
-            Application.Current.Shutdown();
-        }
+            // Charging State
+            bool isCharging = state.TryGetProperty("isCharging", out var chProp) && chProp.GetBoolean();
+            TxtBatteryBolt.Visibility = isCharging ? Visibility.Visible : Visibility.Collapsed;
+            TxtHeroBatteryState.Text = isCharging ? "Fast Charging" : (isConn ? "On Battery" : "Disconnected");
 
-        private void Log(string message)
-        {
-            Dispatcher.InvokeAsync(() =>
+            // Master Volume
+            if (!_isUserDraggingSlider && state.TryGetProperty("masterVolume", out var mvProp))
             {
-                if (TxtLogs == null) return;
-                string ts = DateTime.Now.ToString("HH:mm:ss.fff");
-                TxtLogs.AppendText($"[{ts}]  {message}\n");
-                TxtLogs.ScrollToEnd();
-            });
-        }
-
-        // ─── Title-bar & Window Chrome ────────────────────────────────────
-
-        private void TitleBar_MouseDown(object sender, MouseButtonEventArgs e)
-        {
-            if (e.ChangedButton == System.Windows.Input.MouseButton.Left && e.ClickCount == 2)
-            {
-                ToggleMaximize();
-                return;
+                int vol = mvProp.GetInt32();
+                SliderVolume.Value = vol;
+                TxtVolumeBadge.Text = $"{vol}%";
             }
-            if (e.ChangedButton == System.Windows.Input.MouseButton.Left)
-                DragMove();
+
+            // Mute State
+            if (state.TryGetProperty("isMuted", out var mProp))
+            {
+                bool isMuted = mProp.GetBoolean();
+                TxtMuteBtn.Text = isMuted ? "Unmute" : "Mute";
+                TxtMuteBtn.Foreground = isMuted ? (SolidColorBrush)FindResource("StateDanger") : (SolidColorBrush)FindResource("TextPrimary");
+            }
+
+            // Relay State
+            bool relayConn = state.TryGetProperty("relayConnected", out var rcProp) && rcProp.GetBoolean();
+            TxtRelayPill.Text = relayConn ? "Relay Online" : "Relay Ready";
+            if (state.TryGetProperty("relayRoomId", out var rIdProp))
+            {
+                string rId = rIdProp.GetString() ?? "";
+                TxtTelemetryRoomId.Text = string.IsNullOrWhiteSpace(rId) ? "backend-n4yg" : rId;
+                TxtValRelay.Text = string.IsNullOrWhiteSpace(rId) ? "backend-n4yg" : (rId.Length > 10 ? rId.Substring(0, 10) : rId);
+            }
+
+            // Toggles
+            if (state.TryGetProperty("doNotDisturb", out var dndProp))
+                TxtValDnd.Text = dndProp.GetBoolean() ? "On" : "Off";
+            if (state.TryGetProperty("bluetoothEnabled", out var btProp))
+                TxtValBt.Text = btProp.GetBoolean() ? "Connected" : "Off";
+
+            // Media
+            if (state.TryGetProperty("currentTrack", out var ctProp))
+                TxtMediaTitle.Text = ctProp.GetString() ?? "No Media Playing";
+            if (state.TryGetProperty("currentArtist", out var caProp))
+                TxtMediaArtist.Text = caProp.GetString() ?? "Beatz Companion";
+            if (state.TryGetProperty("isPlaying", out var ipProp))
+                IconMediaPlayText.Text = ipProp.GetBoolean() ? "⏸" : "▶";
         }
 
-        private void BtnMinimize_Click(object sender, RoutedEventArgs e)
+        // ─────────────────────────────────────────────────────────────
+        // LOGGING
+        // ─────────────────────────────────────────────────────────────
+        public void Log(string message)
         {
-            if (_isMinimizing) return;
-            _isMinimizing = true;
-
-            // Fluent smooth minimize transition
-            var anim = new DoubleAnimation(1.0, 0.0, TimeSpan.FromMilliseconds(180))
-            {
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn }
-            };
-
-            anim.Completed += (s, args) =>
-            {
-                WindowState = WindowState.Minimized;
-                Opacity = 1.0;
-                _isMinimizing = false;
-            };
-
-            BeginAnimation(OpacityProperty, anim);
+            string timeStr = DateTime.Now.ToString("HH:mm:ss.fff");
+            string entry = $"[{timeStr}] {message}\r\n";
+            TxtConsoleLog.AppendText(entry);
+            TxtConsoleLog.ScrollToEnd();
         }
+
+        private void BtnClearLogs_Click(object sender, RoutedEventArgs e)
+        {
+            TxtConsoleLog.Clear();
+            Log("Logs cleared by user.");
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        // NAVIGATION & TAB SWITCHING
+        // ─────────────────────────────────────────────────────────────
+        private void NavTab_Checked(object sender, RoutedEventArgs e)
+        {
+            if (PaneStatus == null || PaneApps == null || PaneLogs == null || PaneSettings == null) return;
+
+            PaneStatus.Visibility   = NavTabStatus.IsChecked   == true ? Visibility.Visible : Visibility.Collapsed;
+            PaneApps.Visibility     = NavTabApps.IsChecked     == true ? Visibility.Visible : Visibility.Collapsed;
+            PaneLogs.Visibility     = NavTabLogs.IsChecked     == true ? Visibility.Visible : Visibility.Collapsed;
+            PaneSettings.Visibility = NavTabSettings.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+
+            if (NavTabStatus.IsChecked == true) Log("Switched view to 'Device Status'");
+            else if (NavTabApps.IsChecked == true) Log("Switched view to 'Phone Apps'");
+            else if (NavTabLogs.IsChecked == true) Log("Switched view to 'Activity Logs'");
+            else if (NavTabSettings.IsChecked == true) Log("Switched view to 'Settings'");
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        // WINDOW CHROME CONTROLS
+        // ─────────────────────────────────────────────────────────────
+        private void BtnMinimize_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
 
         private void BtnMaximize_Click(object sender, RoutedEventArgs e)
-        {
-            ToggleMaximize();
-        }
-
-        private void ToggleMaximize()
         {
             if (WindowState == WindowState.Maximized)
             {
                 WindowState = WindowState.Normal;
-                MaximizeIcon.Data = Geometry.Parse("M4,4 H16 V16 H4 Z");
+                IconMaximize.Visibility = Visibility.Visible;
+                IconRestore.Visibility = Visibility.Collapsed;
             }
             else
             {
                 WindowState = WindowState.Maximized;
-                // Switch to restore icon (two overlapping squares)
-                MaximizeIcon.Data = Geometry.Parse("M6,2 H16 V12 M2,6 H12 V16 H2 Z");
+                IconMaximize.Visibility = Visibility.Collapsed;
+                IconRestore.Visibility = Visibility.Visible;
             }
         }
 
-        private void BtnClose_Click(object sender, RoutedEventArgs e)
+        private void BtnHideTray_Click(object sender, RoutedEventArgs e)
         {
-            if (ChkMinimizeToTray.IsChecked == true)
-            {
-                Hide();
-                _notifyIcon?.ShowBalloonTip(2000, "Beatz Control",
-                    "Running in background — double-click tray icon to restore.",
-                    Forms.ToolTipIcon.Info);
-            }
-            else
-            {
-                ExitApp();
-            }
+            Hide();
+            Log("Companion minimized to Windows system tray.");
+            _notifyIcon?.ShowBalloonTip(1200, "Beatz Control", "Minimized to system tray.", Forms.ToolTipIcon.Info);
         }
 
-        protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
-        {
-            if (!_isActualClose && ChkMinimizeToTray.IsChecked == true)
-            {
-                e.Cancel = true;
-                Hide();
-                return;
-            }
-            base.OnClosing(e);
-        }
+        private void BtnClose_Click(object sender, RoutedEventArgs e) => Close();
 
-        // ─── Tab navigation ───────────────────────────────────────────────
-
-        private void Tab_Checked(object sender, RoutedEventArgs e)
-        {
-            if (ViewDashboard == null) return;
-
-            ViewDashboard.Visibility = TabDashboard.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
-            ViewApps.Visibility      = TabApps.IsChecked      == true ? Visibility.Visible : Visibility.Collapsed;
-            ViewSettings.Visibility  = TabSettings.IsChecked  == true ? Visibility.Visible : Visibility.Collapsed;
-            ViewLogs.Visibility      = TabLogs.IsChecked      == true ? Visibility.Visible : Visibility.Collapsed;
-
-            if (TabApps.IsChecked == true)
-                RefreshActiveApps();
-        }
-
-        // ─── Dashboard Controls ───────────────────────────────────────────
-
-        private void BtnReconnect_Click(object sender, RoutedEventArgs e)
-        {
-            string url = TxtRelayUrlInput?.Text?.Trim() is { Length: > 0 } u ? u : DefaultRelayUrl;
-            Log($"Manual reconnect requested → {url}");
-            InitializeRelayService(url);
-        }
-
-        private void BtnCopyRoomId_Click(object sender, RoutedEventArgs e)
-        {
-            string room = _relay?.RoomId ?? string.Empty;
-            if (string.IsNullOrEmpty(room)) return;
-
-            Clipboard.SetText(room);
-            Log($"Room ID copied: {room}");
-
-            if (sender is Button btn)
-            {
-                btn.Content = "✓ Copied!";
-                var t = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
-                t.Tick += (_, __) => { btn.Content = "Copy Room ID"; t.Stop(); };
-                t.Start();
-            }
-        }
-
-        private void BtnToggleHotspot_Click(object sender, RoutedEventArgs e)
-        {
-            if (!_isHotspotRunning)
-            {
-                bool ok = AccessPointManager.StartHostedNetwork();
-                _isHotspotRunning = true;
-                BtnToggleHotspot.Content = "Stop Hotspot";
-                Log(ok ? "LAN hotspot started." : "Hotspot toggle attempted (no Wi-Fi adapter?).");
-            }
-            else
-            {
-                AccessPointManager.StopHostedNetwork();
-                _isHotspotRunning = false;
-                BtnToggleHotspot.Content = "Start Hotspot";
-                Log("LAN hotspot stopped.");
-            }
-        }
-
-        // ─── Volume & Media ───────────────────────────────────────────────
-
+        // ─────────────────────────────────────────────────────────────
+        // WORKSTATION & HARDWARE COMMAND DISPATCHERS
+        // ─────────────────────────────────────────────────────────────
         private void SliderVolume_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
-            if (TxtVolumePercent == null || _audio == null) return;
-            int vol = (int)e.NewValue;
-            TxtVolumePercent.Text = $"{vol}%";
-            _audio.SetMasterVolumePercent(vol);
+            if (!_isIpcConnected && _audio == null) return;
+            _isUserDraggingSlider = true;
+            int val = (int)SliderVolume.Value;
+            TxtVolumeBadge.Text = $"{val}%";
+
+            _ = SendIpcCommandAsync(new { type = "set_volume", volume = val });
+            _isUserDraggingSlider = false;
         }
 
-        private void BtnMute_Click(object sender, RoutedEventArgs e)
+        private void BtnToggleMute_Click(object sender, RoutedEventArgs e)
         {
-            _audio.ToggleMute();
-            bool m = _audio.GetMute();
-            BtnMute.Content       = m ? "🔇  Unmute" : "🔊  Mute";
-            BadgeMuted.Visibility = m ? Visibility.Visible : Visibility.Collapsed;
-            Log($"Mute toggled → {m}");
+            Log("Toggled master audio mute.");
+            _ = SendIpcCommandAsync(new { type = "toggle_mute" });
         }
 
-        private void BtnPrev_Click(object sender, RoutedEventArgs e)      => _audio.PreviousTrack();
-        private void BtnPlayPause_Click(object sender, RoutedEventArgs e)  => _audio.PlayPause();
-        private void BtnNext_Click(object sender, RoutedEventArgs e)       => _audio.NextTrack();
-
-        // ─── System Actions ───────────────────────────────────────────────
-
-        private void BtnLock_Click(object sender, RoutedEventArgs e)
+        private void BtnLockPc_Click(object sender, RoutedEventArgs e)
         {
-            _hardware.LockScreen();
-            Log("Workstation locked.");
+            Log("Command dispatched: lock_pc");
+            _ = SendIpcCommandAsync(new { type = "lock_pc" });
         }
 
-        private void BtnShowDesktop_Click(object sender, RoutedEventArgs e)
+        private void BtnSleepPc_Click(object sender, RoutedEventArgs e)
         {
-            _hardware.SendHotkey(0x5B, 0x44); // Win + D
-            Log("Show Desktop triggered.");
-        }
-
-        private void BtnSleep_Click(object sender, RoutedEventArgs e)
-        {
-            Log("Entering sleep state…");
-            _hardware.SleepComputer();
-        }
-
-        private void BtnTaskManager_Click(object sender, RoutedEventArgs e)
-        {
-            try { Process.Start(new ProcessStartInfo("taskmgr.exe") { UseShellExecute = true }); }
-            catch { }
-        }
-
-        // ─── Test Trackpad ────────────────────────────────────────────────
-
-        private void TestTrackpad_MouseDown(object sender, MouseButtonEventArgs e)
-        {
-            _lastTrackpadPt = e.GetPosition(TestTrackpadArea);
-            if (e.LeftButton == MouseButtonState.Pressed)
+            if (MessageBox.Show("Put workstation into Sleep mode?", "Confirm Sleep", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
             {
-                _hardware.MouseClick(PCControl.Core.MouseButton.Left);
-                Log("[Trackpad] Left click");
+                Log("Command dispatched: sleep");
+                _ = SendIpcCommandAsync(new { type = "sleep" });
             }
         }
 
-        private void TestTrackpad_MouseMove(object sender, System.Windows.Input.MouseEventArgs e)
+        private void BtnRestartPc_Click(object sender, RoutedEventArgs e)
         {
-            if (e.LeftButton != MouseButtonState.Pressed) return;
-
-            var cur  = e.GetPosition(TestTrackpadArea);
-            int dx   = (int)((cur.X - _lastTrackpadPt.X) * 2.0);
-            int dy   = (int)((cur.Y - _lastTrackpadPt.Y) * 2.0);
-
-            if (Math.Abs(dx) > 0 || Math.Abs(dy) > 0)
+            if (MessageBox.Show("Restart workstation immediately?", "Confirm Restart", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes)
             {
-                _hardware.MoveMouseRelative(dx, dy);
-                _lastTrackpadPt = cur;
+                Log("Command dispatched: restart");
+                _ = SendIpcCommandAsync(new { type = "restart" });
             }
         }
 
-        // ─── Active Apps Tab ──────────────────────────────────────────────
+        private void BtnShutdownPc_Click(object sender, RoutedEventArgs e)
+        {
+            if (MessageBox.Show("Shutdown workstation?", "Confirm Shutdown", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes)
+            {
+                Log("Command dispatched: shutdown");
+                _ = SendIpcCommandAsync(new { type = "shutdown" });
+            }
+        }
 
-        private void BtnRefreshApps_Click(object sender, RoutedEventArgs e)  => RefreshActiveApps();
+        private void BtnMediaPlay_Click(object sender, RoutedEventArgs e)
+        {
+            Log("Command dispatched: media_play_pause");
+            _ = SendIpcCommandAsync(new { type = "media_play_pause" });
+        }
 
-        private void RefreshActiveApps()
+        private void BtnAppTile_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button btn && btn.Tag is string appName)
+            {
+                Log($"Requested mobile app launch: {appName}");
+                _ = SendIpcCommandAsync(new { type = "launch_app", app = appName });
+            }
+        }
+
+        private void BtnOpenMirror_Click(object sender, RoutedEventArgs e)
+        {
+            Log("Initiating phone screen mirroring session…");
+            _ = SendIpcCommandAsync(new { type = "open_mirror" });
+        }
+
+        private void ChkStartWithWindows_Click(object sender, RoutedEventArgs e)
         {
             try
             {
-                var apps = _hardware.GetActiveWindows();
-                DataGridApps.ItemsSource = apps;
-                Log($"Found {apps.Count} active windows.");
-            }
-            catch (Exception ex)
-            {
-                Log($"App scan error: {ex.Message}");
-            }
-        }
-
-        private void BtnCloseSelectedApp_Click(object sender, RoutedEventArgs e)
-        {
-            if (DataGridApps.SelectedItem is WindowInfo wi)
-            {
-                _hardware.CloseWindow(wi.Handle);
-                Log($"Closed '{wi.Title}' (PID {wi.ProcessId})");
-                RefreshActiveApps();
-            }
-        }
-
-        // ─── Settings Tab ─────────────────────────────────────────────────
-
-        private void BtnApplyRelayUrl_Click(object sender, RoutedEventArgs e)
-        {
-            string url = TxtRelayUrlInput.Text?.Trim() ?? DefaultRelayUrl;
-            if (string.IsNullOrWhiteSpace(url)) url = DefaultRelayUrl;
-            Log($"Applying new relay URL: {url}");
-            TxtRelayUrl.Text = url;
-            InitializeRelayService(url);
-        }
-
-        private void BtnInstallService_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                string exe = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "PCControl.Service.exe");
-                if (!File.Exists(exe)) { Log($"Service exe not found: {exe}"); return; }
-
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName         = exe,
-                    Arguments        = "--install",
-                    Verb             = "runas",
-                    UseShellExecute  = true
-                })?.WaitForExit();
-
-                TxtServiceStatus.Text       = "Status: Background Service Installed ✓";
-                TxtServiceStatus.Foreground = new SolidColorBrush(Color.FromRgb(16, 185, 129));
-                Log("PCControl.Service installed.");
-            }
-            catch (Exception ex) { Log($"Install error: {ex.Message}"); }
-        }
-
-        private void BtnUninstallService_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                string exe = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "PCControl.Service.exe");
-                if (!File.Exists(exe)) { Log($"Service exe not found: {exe}"); return; }
-
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName        = exe,
-                    Arguments       = "--uninstall",
-                    Verb            = "runas",
-                    UseShellExecute = true
-                })?.WaitForExit();
-
-                TxtServiceStatus.Text       = "Status: Service Uninstalled";
-                TxtServiceStatus.Foreground = new SolidColorBrush(Color.FromRgb(245, 158, 11));
-                Log("PCControl.Service uninstalled.");
-            }
-            catch (Exception ex) { Log($"Uninstall error: {ex.Message}"); }
-        }
-
-        private void BtnAddFirewall_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                Process.Start(new ProcessStartInfo("netsh",
-                    "advfirewall firewall add rule name=\"Beatz Control\" " +
-                    "dir=in action=allow protocol=TCP localport=8080")
-                {
-                    CreateNoWindow  = true,
-                    UseShellExecute = true,
-                    Verb            = "runas"
-                })?.WaitForExit();
-
-                Log("Firewall rule added for TCP 8080.");
-            }
-            catch (Exception ex) { Log($"Firewall error: {ex.Message}"); }
-        }
-
-        private void ChkStartWithWindows_Changed(object sender, RoutedEventArgs e)
-        {
-            const string regKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Run";
-            const string appName = "BeatzControl";
-
-            try
-            {
-                using RegistryKey? key = Registry.CurrentUser.OpenSubKey(regKey, writable: true);
-                if (key == null) return;
-
+                using var runKey = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true);
                 if (ChkStartWithWindows.IsChecked == true)
                 {
-                    string exePath = $"\"{Process.GetCurrentProcess().MainModule?.FileName}\" --autostart --minimized";
-                    key.SetValue(appName, exePath);
-                    Log("Added to Windows startup (silent background mode).");
+                    string exePath = Process.GetCurrentProcess().MainModule?.FileName ?? "";
+                    runKey?.SetValue("BeatzControl", $"\"{exePath}\" --autostart --minimized");
+                    Log("Configured Beatz Control to auto-start with Windows.");
                 }
                 else
                 {
-                    key.DeleteValue(appName, throwOnMissingValue: false);
-                    Log("Removed from Windows startup.");
+                    runKey?.DeleteValue("BeatzControl", false);
+                    Log("Removed Beatz Control from Windows startup.");
                 }
-
-                UpdateStartupIndicator(ChkStartWithWindows.IsChecked == true);
             }
-            catch (Exception ex) { Log($"Startup registry error: {ex.Message}"); }
-        }
-
-        // ─── Log Tab ──────────────────────────────────────────────────────
-
-        private void UpdateStartupIndicator(bool enabled)
-        {
-            if (DotStartupMode == null || TxtStartupMode == null) return;
-
-            if (enabled)
+            catch (Exception ex)
             {
-                DotStartupMode.Fill = new SolidColorBrush(Color.FromRgb(16, 185, 129));
-                TxtStartupMode.Text = "Windows startup: Enabled — launches silently with --autostart --minimized";
-            }
-            else
-            {
-                DotStartupMode.Fill = new SolidColorBrush(Color.FromRgb(245, 158, 11));
-                TxtStartupMode.Text = "Windows startup: Not configured";
+                Log($"Startup configuration note: {ex.Message}");
             }
         }
-
-        private void BtnClearLogs_Click(object sender, RoutedEventArgs e) => TxtLogs.Clear();
     }
 }

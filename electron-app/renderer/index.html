@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' ws://127.0.0.1:* https://backend-n4yg.onrender.com; script-src 'self'; style-src 'self' 'unsafe-inline';">
+  <title>Beatz Control</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       1. WINDOWS 11 FLUENT TITLEBAR
+       ═══════════════════════════════════════════════════════════════════════ -->
+  <header class="fluent-titlebar" id="fluentTitlebar">
+    <div class="titlebar-drag-area" id="titlebarDrag">
+      <div class="brand-group">
+        <!-- Modern Windows 11 Fluent App Icon -->
+        <svg class="brand-icon" width="20" height="20" viewBox="0 0 24 24" fill="none">
+          <defs>
+            <linearGradient id="brandLinear" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#0078D4"/>
+              <stop offset="1" stop-color="#60CDFF"/>
+            </linearGradient>
+          </defs>
+          <rect x="2" y="3" width="20" height="13" rx="3" stroke="url(#brandLinear)" stroke-width="2"/>
+          <path d="M8 20h8M12 16v4" stroke="url(#brandLinear)" stroke-width="2" stroke-linecap="round"/>
+          <rect x="14" y="8" width="7.5" height="13" rx="2" fill="#1C1C1C" stroke="#60CDFF" stroke-width="1.8"/>
+          <circle cx="17.75" cy="18.5" r="0.9" fill="#60CDFF"/>
+          <path d="M6 8a4 4 0 0 1 4-4" stroke="#60CDFF" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+        <span class="brand-name">Beatz Control</span>
+        <span class="brand-edition">Companion</span>
+      </div>
+    </div>
+
+    <!-- Live IPC Handshake Badge -->
+    <div class="ipc-status-pill" id="ipcStatusPill" title="Connected to background service over local WebSocket bridge">
+      <span class="status-dot" id="statusDot"></span>
+      <span class="status-label" id="ipcStatusLabel">Connected • &lt;1ms</span>
+    </div>
+
+    <!-- Native Windows 11 Caption Controls -->
+    <div class="caption-controls">
+      <!-- Minimize -->
+      <button class="caption-btn" id="btnMinimize" title="Minimize" aria-label="Minimize">
+        <svg width="10" height="10" viewBox="0 0 10 10">
+          <path d="M1 5.5h8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+        </svg>
+      </button>
+
+      <!-- Maximize / Restore Down -->
+      <button class="caption-btn" id="btnMaximize" title="Maximize" aria-label="Maximize">
+        <svg class="icon-max" width="10" height="10" viewBox="0 0 10 10">
+          <rect x="1.5" y="1.5" width="7" height="7" stroke="currentColor" stroke-width="1.1" fill="none" rx="1"/>
+        </svg>
+        <svg class="icon-res" width="10" height="10" viewBox="0 0 10 10" style="display: none;">
+          <rect x="3" y="1" width="6" height="6" stroke="currentColor" stroke-width="1" fill="none" rx="0.8"/>
+          <path d="M1 3.5v5a.8.8 0 0 0 .8.8h5" stroke="currentColor" stroke-width="1" fill="none"/>
+        </svg>
+      </button>
+
+      <!-- Tray -->
+      <button class="caption-btn" id="btnHideTray" title="Minimize to System Tray" aria-label="Minimize to System Tray">
+        <svg width="10" height="10" viewBox="0 0 10 10">
+          <path d="M5 1v5.5M2.8 4.2L5 6.5l2.2-2.3M1 8.5h8" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+
+      <!-- Close -->
+      <button class="caption-btn caption-close" id="btnClose" title="Close" aria-label="Close">
+        <svg width="10" height="10" viewBox="0 0 10 10">
+          <path d="M1.5 1.5l7 7M8.5 1.5l-7 7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       2. FLUENT APP SHELL (SIDEBAR + MAIN CONTENT VIEWPORT)
+       ═══════════════════════════════════════════════════════════════════════ -->
+  <div class="fluent-shell">
+
+    <!-- ── LEFT NAVIGATION RAIL ─────────────────────────────────────────── -->
+    <aside class="fluent-sidebar">
+      
+      <!-- Device Glance Card -->
+      <div class="device-glance-card" id="deviceGlanceCard">
+        <div class="phone-silhouette">
+          <div class="phone-screen-accent">
+            <span class="phone-time-mini" id="glanceClock">12:00</span>
+          </div>
+        </div>
+
+        <div class="device-meta">
+          <span class="device-label" id="sidebarDeviceName">No Device Connected</span>
+          
+          <div class="device-metrics-row">
+            <!-- Battery Micro -->
+            <div class="metric-badge battery-badge" id="batteryBadge">
+              <div class="battery-chassis">
+                <div class="battery-level-fill" id="sidebarBatteryBar" style="width: 0%;"></div>
+                <svg class="bolt-icon" id="sidebarChargingLightning" width="8" height="9" viewBox="0 0 24 24" fill="#fbbf24" style="display: none;">
+                  <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                </svg>
+              </div>
+              <span class="metric-text" id="sidebarBatteryLabel">--%</span>
+            </div>
+
+            <!-- Wi-Fi Arcs -->
+            <div class="metric-badge" title="Local Wi-Fi Signal">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M5 12.55a11 11 0 0 1 14.08 0"/>
+                <path d="M1.42 9a16 16 0 0 1 21.16 0"/>
+                <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
+                <circle cx="12" cy="20" r="1.2" fill="currentColor"/>
+              </svg>
+            </div>
+
+            <!-- Cellular 5G -->
+            <div class="metric-badge" title="5G Cellular Signal">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="2" y="17" width="3.2" height="5" rx="1"/>
+                <rect x="7.5" y="13" width="3.2" height="9" rx="1"/>
+                <rect x="13" y="8" width="3.2" height="14" rx="1"/>
+                <rect x="18.5" y="3" width="3.2" height="19" rx="1"/>
+              </svg>
+            </div>
+
+            <!-- Bluetooth Toggle -->
+            <button class="metric-action-btn" id="btnToggleBluetooth" title="Bluetooth Link">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M6.5 6.5l11 11L12 23V1l5.5 5.5-11 11"/>
+              </svg>
+            </button>
+
+            <!-- DND Toggle -->
+            <button class="metric-action-btn" id="btnToggleDnd" title="Do Not Disturb">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                <line x1="2" y1="2" x2="22" y2="22" stroke-width="2.2"/>
+              </svg>
+            </button>
+          </div>
+
+          <div class="connection-status-line">
+            <span class="status-indicator-dot" id="sidebarConnDot"></span>
+            <span class="status-desc" id="sidebarConnText">Awaiting pairing...</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Navigation Menu Items -->
+      <nav class="fluent-nav-list">
+        <!-- Tab 0: Status -->
+        <button class="fluent-nav-item active" data-tab="status">
+          <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="5" y="2" width="14" height="20" rx="3"/>
+            <path d="M12 18h.01"/>
+            <path d="M9 6h6"/>
+          </svg>
+          <span class="nav-text">Device Status</span>
+        </button>
+
+        <!-- Tab 1: Messages -->
+        <button class="fluent-nav-item" data-tab="messages">
+          <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+          </svg>
+          <span class="nav-text">Messages</span>
+          <span class="nav-counter-pill" id="msgBadge">3</span>
+        </button>
+
+        <!-- Tab 2: Photos -->
+        <button class="fluent-nav-item" data-tab="photos">
+          <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="3"/>
+            <circle cx="8.5" cy="8.5" r="1.5"/>
+            <polyline points="21 15 16 10 5 21"/>
+          </svg>
+          <span class="nav-text">Photos</span>
+        </button>
+
+        <!-- Tab 3: Apps -->
+        <button class="fluent-nav-item" data-tab="apps">
+          <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7" rx="1.5"/>
+            <rect x="14" y="3" width="7" height="7" rx="1.5"/>
+            <rect x="14" y="14" width="7" height="7" rx="1.5"/>
+            <rect x="3" y="14" width="7" height="7" rx="1.5"/>
+          </svg>
+          <span class="nav-text">Phone Apps</span>
+        </button>
+
+        <!-- Tab 4: Logs (Live Diagnostic Activity) -->
+        <button class="fluent-nav-item" data-tab="logs">
+          <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="4 17 10 11 4 5"/>
+            <line x1="12" y1="19" x2="20" y2="19"/>
+          </svg>
+          <span class="nav-text">Activity Logs</span>
+        </button>
+
+        <!-- Tab 5: Settings -->
+        <button class="fluent-nav-item" data-tab="settings">
+          <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+          <span class="nav-text">Settings</span>
+        </button>
+      </nav>
+
+      <!-- Sidebar Media Player Card -->
+      <div class="fluent-media-card">
+        <div class="media-art-box">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#60CDFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 18V5l12-2v13"/>
+            <circle cx="6" cy="18" r="3"/>
+            <circle cx="18" cy="16" r="3"/>
+          </svg>
+        </div>
+        <div class="media-text-block">
+          <span class="media-title-line" id="mediaTitle">No Media Playing</span>
+          <span class="media-artist-line" id="mediaArtist">Beatz Companion</span>
+        </div>
+        <div class="media-button-row">
+          <button class="media-control-btn" id="btnMediaPrev" title="Previous Track">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/>
+            </svg>
+          </button>
+          <button class="media-control-btn media-primary-btn" id="btnMediaPlay" title="Play / Pause">
+            <svg id="iconMediaPlay" width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M8 5v14l11-7z"/>
+            </svg>
+            <svg id="iconMediaPause" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="display: none;">
+              <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+            </svg>
+          </button>
+          <button class="media-control-btn" id="btnMediaNext" title="Next Track">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- ── RIGHT MAIN VIEWPORT ──────────────────────────────────────────── -->
+    <main class="fluent-viewport">
+
+      <!-- Update Alert Banner -->
+      <div class="update-card-banner" id="updateBanner" style="display: none;">
+        <div class="update-banner-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#60CDFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+        </div>
+        <div class="update-banner-info">
+          <strong id="updateTitle">Update Available</strong>
+          <span id="updateDesc">A newer version of Beatz Control is available.</span>
+        </div>
+        <div class="update-banner-actions">
+          <button class="fluent-btn-accent" id="btnApplyUpdate">Restart &amp; Install Patch</button>
+          <button class="fluent-btn-subtle" id="btnDismissUpdate">✕</button>
+        </div>
+      </div>
+
+      <!-- ═════════════════════════════════════════════════════════════════
+           TAB 0: DEVICE STATUS
+           ═════════════════════════════════════════════════════════════════ -->
+      <section class="fluent-page active" id="pane-status">
+        
+        <!-- Page Header -->
+        <div class="page-header">
+          <div>
+            <h1 class="page-title" id="mainHeaderDeviceName">No Device Connected</h1>
+            <p class="page-subtitle" id="mainHeaderSub">Synchronized seamlessly with your Windows PC</p>
+          </div>
+          <div class="relay-pill" id="relayStatusBadge">
+            <span class="relay-pulse-dot"></span>
+            <span id="relayStatusText">Relay Ready</span>
+          </div>
+        </div>
+
+        <!-- Phone Overview Hero Card -->
+        <div class="hero-overview-card">
+          <div class="hero-info-column">
+            <div class="hero-tag-row">
+              <span class="status-tag" id="heroConnStateTag">SEARCHING FOR PHONE</span>
+              <span class="channel-tag">Wi-Fi (Port 8080) &amp; Cloud Relay</span>
+            </div>
+
+            <h2 class="hero-title" id="heroDeviceName">Waiting for Device</h2>
+            <p class="hero-desc" id="heroDeviceDesc">
+              Awaiting companion connection. Pair the mobile app on your local Wi-Fi or via the secure cloud relay to enable remote control, audio sync, and instant notifications.
+            </p>
+
+            <!-- Quick Toggles -->
+            <div class="quick-toggles-row">
+              <div class="toggle-card" id="pillDnd">
+                <div class="toggle-icon-wrap">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                    <line x1="2" y1="2" x2="22" y2="22" stroke-width="2.2"/>
+                  </svg>
+                </div>
+                <div class="toggle-text-wrap">
+                  <span class="toggle-title">Do Not Disturb</span>
+                  <span class="toggle-state" id="valDnd">Off</span>
+                </div>
+              </div>
+
+              <div class="toggle-card" id="pillBluetooth">
+                <div class="toggle-icon-wrap">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M6.5 6.5l11 11L12 23V1l5.5 5.5-11 11"/>
+                  </svg>
+                </div>
+                <div class="toggle-text-wrap">
+                  <span class="toggle-title">Bluetooth Audio</span>
+                  <span class="toggle-state" id="valBt">Connected</span>
+                </div>
+              </div>
+
+              <div class="toggle-card" id="pillHotspot">
+                <div class="toggle-icon-wrap">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>
+                  </svg>
+                </div>
+                <div class="toggle-text-wrap">
+                  <span class="toggle-title">Relay Node</span>
+                  <span class="toggle-state" id="valRelay">backend-n4yg</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Hero Circular Battery Ring -->
+          <div class="hero-battery-box">
+            <div class="circular-ring-wrap">
+              <svg class="ring-svg" viewBox="0 0 100 100">
+                <circle class="ring-track" cx="50" cy="50" r="42"/>
+                <circle class="ring-indicator" id="ringProgress" cx="50" cy="50" r="42" stroke-dasharray="264" stroke-dashoffset="264"/>
+              </svg>
+              <div class="ring-content">
+                <svg class="ring-bolt-icon" id="ringBolt" width="16" height="16" viewBox="0 0 24 24" fill="#fbbf24" style="display: none;">
+                  <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                </svg>
+                <span class="ring-value" id="ringBatteryNum">--%</span>
+                <span class="ring-status" id="ringBatteryState">Disconnected</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2-Column Controls Grid -->
+        <div class="card-grid-2col">
+          <!-- Audio Controller Card -->
+          <div class="fluent-card">
+            <div class="card-header-bar">
+              <div class="card-title-group">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#60CDFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                </svg>
+                <h3 class="card-title">Workstation Master Volume</h3>
+              </div>
+              <span class="volume-badge" id="volumeNumBadge">50%</span>
+            </div>
+
+            <p class="card-caption">Sync and adjust PC master audio directly through companion bridge.</p>
+
+            <div class="slider-control-group">
+              <input type="range" min="0" max="100" value="50" class="fluent-slider" id="volumeSlider">
+              <button class="fluent-btn-standard" id="btnToggleMute">
+                <span id="muteIconWrap">
+                  <svg id="muteIconSpeaker" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                  </svg>
+                  <svg id="muteIconMuted" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#F87171" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none;">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                    <line x1="23" y1="9" x2="17" y2="15"/>
+                    <line x1="17" y1="9" x2="23" y2="15"/>
+                  </svg>
+                </span>
+                <span id="muteLabel">Mute</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Remote PC Actions Card -->
+          <div class="fluent-card">
+            <div class="card-header-bar">
+              <div class="card-title-group">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                </svg>
+                <h3 class="card-title">PC Power Controls</h3>
+              </div>
+            </div>
+
+            <p class="card-caption">Execute immediate workstation power states via local background service.</p>
+
+            <div class="power-buttons-grid">
+              <!-- Lock -->
+              <button class="action-tile-btn" id="btnLockPc">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                </svg>
+                <span>Lock PC</span>
+              </button>
+
+              <!-- Sleep -->
+              <button class="action-tile-btn" id="btnSleepPc">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                </svg>
+                <span>Sleep</span>
+              </button>
+
+              <!-- Restart -->
+              <button class="action-tile-btn" id="btnRestartPc">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="23 4 23 10 17 10"/>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                </svg>
+                <span>Restart</span>
+              </button>
+
+              <!-- Shutdown -->
+              <button class="action-tile-btn btn-danger-tile" id="btnShutdownPc">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M18.36 6.64a9 9 0 1 1-12.73 0"/>
+                  <line x1="12" y1="2" x2="12" y2="12"/>
+                </svg>
+                <span>Shutdown</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Telemetry Data Strip -->
+        <div class="telemetry-strip">
+          <div class="telemetry-cell">
+            <span class="cell-label">HOST WORKSTATION</span>
+            <span class="cell-value" id="telemetryHost">This PC</span>
+          </div>
+          <div class="telemetry-cell">
+            <span class="cell-label">ACTIVE USER</span>
+            <span class="cell-value" id="telemetryUser">—</span>
+          </div>
+          <div class="telemetry-cell">
+            <span class="cell-label">LOCAL IPC BRIDGE</span>
+            <span class="cell-value text-accent" id="telemetryIpc">&lt; 1 ms (Loopback)</span>
+          </div>
+          <div class="telemetry-cell">
+            <span class="cell-label">CLOUD RELAY ID</span>
+            <span class="cell-value" id="telemetryRoomId">—</span>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- ═════════════════════════════════════════════════════════════════
+           TAB 1: MESSAGES (WINDOWS PHONE LINK STYLE)
+           ═════════════════════════════════════════════════════════════════ -->
+      <section class="fluent-page" id="pane-messages">
+        <div class="messages-window-shell">
+          <!-- Convo List -->
+          <div class="convo-list-pane">
+            <div class="convo-pane-header">
+              <h2>Messages</h2>
+              <button class="fluent-round-btn" title="Compose New Message">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 20h9"/>
+                  <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                </svg>
+              </button>
+            </div>
+            
+            <div class="convo-scroll-area">
+              <div class="convo-row active">
+                <div class="convo-avatar">AR</div>
+                <div class="convo-preview-box">
+                  <div class="convo-top-row">
+                    <span class="convo-author">Alex Rivera</span>
+                    <span class="convo-timestamp">Just now</span>
+                  </div>
+                  <p class="convo-snippet">The native Windows 11 build runs smooth!</p>
+                </div>
+              </div>
+
+              <div class="convo-row">
+                <div class="convo-avatar blue">CA</div>
+                <div class="convo-preview-box">
+                  <div class="convo-top-row">
+                    <span class="convo-author">Cloud Relay</span>
+                    <span class="convo-timestamp">10:42 AM</span>
+                  </div>
+                  <p class="convo-snippet">[Render Cloud] Connection verified.</p>
+                </div>
+              </div>
+
+              <div class="convo-row">
+                <div class="convo-avatar pink">SJ</div>
+                <div class="convo-preview-box">
+                  <div class="convo-top-row">
+                    <span class="convo-author">Sarah Jenkins</span>
+                    <span class="convo-timestamp">Yesterday</span>
+                  </div>
+                  <p class="convo-snippet">Companion sync looks authentic.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Chat Detail -->
+          <div class="chat-detail-pane">
+            <div class="chat-pane-header">
+              <div class="chat-author-info">
+                <h3>Alex Rivera</h3>
+                <span class="phone-subtitle">+1 (555) 382-9102 • Mobile</span>
+              </div>
+              <div class="chat-header-actions">
+                <button class="fluent-round-btn" title="Voice Call">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="chat-messages-stream" id="chatHistory">
+              <div class="chat-bubble received">
+                <p>Hey! How does the native Windows 11 title bar and UI feel?</p>
+                <span class="time-label">11:15 AM</span>
+              </div>
+              <div class="chat-bubble sent">
+                <p>Completely native! High-speed WebSocket bridge, zero-latency state sync, and crisp vector graphics.</p>
+                <span class="time-label">11:16 AM</span>
+              </div>
+              <div class="chat-bubble received">
+                <p>Outstanding! Clean structure and zero UI distortion.</p>
+                <span class="time-label">11:17 AM</span>
+              </div>
+            </div>
+
+            <div class="chat-composer-box">
+              <input type="text" id="chatInput" placeholder="Send a message..." class="fluent-text-input">
+              <button class="fluent-btn-accent" id="btnSendMessage">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="22" y1="2" x2="11" y2="13"/>
+                  <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                </svg>
+                <span>Send</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═════════════════════════════════════════════════════════════════
+           TAB 2: PHOTOS
+           ═════════════════════════════════════════════════════════════════ -->
+      <section class="fluent-page" id="pane-photos">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">Photos</h1>
+            <p class="page-subtitle">Recent photos and screenshots from your mobile device</p>
+          </div>
+          <div class="filter-pills-row">
+            <button class="filter-btn active">All Photos</button>
+            <button class="filter-btn">Camera</button>
+            <button class="filter-btn">Screenshots</button>
+          </div>
+        </div>
+
+        <div class="photos-mosaic-grid">
+          <div class="photo-tile" style="background: linear-gradient(135deg, #1e3a8a, #3b82f6);">
+            <div class="photo-info-bar">
+              <span class="photo-type">HDR Camera</span>
+              <span class="photo-date">Today, 2:15 PM</span>
+            </div>
+          </div>
+          <div class="photo-tile" style="background: linear-gradient(135deg, #064e3b, #10b981);">
+            <div class="photo-info-bar">
+              <span class="photo-type">Landscape</span>
+              <span class="photo-date">Today, 11:30 AM</span>
+            </div>
+          </div>
+          <div class="photo-tile" style="background: linear-gradient(135deg, #4c1d95, #8b5cf6);">
+            <div class="photo-info-bar">
+              <span class="photo-type">Portrait</span>
+              <span class="photo-date">Yesterday</span>
+            </div>
+          </div>
+          <div class="photo-tile" style="background: linear-gradient(135deg, #831843, #ec4899);">
+            <div class="photo-info-bar">
+              <span class="photo-type">Screenshot</span>
+              <span class="photo-date">Yesterday</span>
+            </div>
+          </div>
+          <div class="photo-tile" style="background: linear-gradient(135deg, #78350f, #f59e0b);">
+            <div class="photo-info-bar">
+              <span class="photo-type">Architecture</span>
+              <span class="photo-date">Nov 4</span>
+            </div>
+          </div>
+          <div class="photo-tile" style="background: linear-gradient(135deg, #0f172a, #334155);">
+            <div class="photo-info-bar">
+              <span class="photo-type">Workstation</span>
+              <span class="photo-date">Nov 2</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═════════════════════════════════════════════════════════════════
+           TAB 3: APPS & SCREEN MIRROR
+           ═════════════════════════════════════════════════════════════════ -->
+      <section class="fluent-page" id="pane-apps">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">Phone Apps &amp; Screen Mirror</h1>
+            <p class="page-subtitle">Cast phone display or launch apps directly from PC</p>
+          </div>
+          <button class="fluent-btn-accent" id="btnOpenScreenMirror">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2"/>
+              <line x1="8" y1="21" x2="16" y2="21"/>
+              <line x1="12" y1="17" x2="12" y2="21"/>
+            </svg>
+            <span>Open Phone Screen</span>
+          </button>
+        </div>
+
+        <h3 class="section-label">Pinned Phone Apps</h3>
+        <div class="apps-launcher-grid">
+          <!-- Spotify -->
+          <div class="app-launcher-card" data-app="Spotify">
+            <div class="app-squircle-icon spotify-gradient">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zm4.586 14.424a.623.623 0 0 1-.857.207c-2.348-1.435-5.304-1.76-8.786-.964a.625.625 0 1 1-.278-1.22c3.81-.87 7.076-.496 9.714 1.118a.625.625 0 0 1 .207.859zm1.224-2.724a.782.782 0 0 1-1.077.257c-2.688-1.652-6.785-2.131-9.965-1.166a.782.782 0 0 1-.454-1.498c3.633-1.103 8.147-.569 11.24 1.33a.781.781 0 0 1 .256 1.077zm.105-2.835C14.692 8.92 9.38 8.744 6.305 9.678a.938.938 0 1 1-.548-1.794c3.53-1.072 9.404-.863 13.123 1.346a.938.938 0 0 1-1.066 1.635z"/>
+              </svg>
+            </div>
+            <span class="app-name">Spotify</span>
+          </div>
+
+          <!-- WhatsApp -->
+          <div class="app-launcher-card" data-app="WhatsApp">
+            <div class="app-squircle-icon whatsapp-gradient">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0 0 12.04 2m.01 1.67c2.2 0 4.26.86 5.82 2.42a8.225 8.225 0 0 1 2.41 5.83c0 4.54-3.7 8.24-8.24 8.24-1.48 0-2.93-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.196 8.196 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24"/>
+              </svg>
+            </div>
+            <span class="app-name">WhatsApp</span>
+          </div>
+
+          <!-- Camera -->
+          <div class="app-launcher-card" data-app="Camera">
+            <div class="app-squircle-icon camera-gradient">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                <circle cx="12" cy="13" r="4"/>
+              </svg>
+            </div>
+            <span class="app-name">Camera</span>
+          </div>
+
+          <!-- Gallery -->
+          <div class="app-launcher-card" data-app="Gallery">
+            <div class="app-squircle-icon gallery-gradient">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                <circle cx="8.5" cy="8.5" r="1.5"/>
+                <polyline points="21 15 16 10 5 21"/>
+              </svg>
+            </div>
+            <span class="app-name">Gallery</span>
+          </div>
+
+          <!-- YouTube -->
+          <div class="app-launcher-card" data-app="YouTube">
+            <div class="app-squircle-icon youtube-gradient">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+              </svg>
+            </div>
+            <span class="app-name">YouTube</span>
+          </div>
+
+          <!-- Phone -->
+          <div class="app-launcher-card" data-app="Phone">
+            <div class="app-squircle-icon phone-gradient">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+              </svg>
+            </div>
+            <span class="app-name">Phone</span>
+          </div>
+
+          <!-- Files -->
+          <div class="app-launcher-card" data-app="Files">
+            <div class="app-squircle-icon files-gradient">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              </svg>
+            </div>
+            <span class="app-name">Files</span>
+          </div>
+
+          <!-- Settings -->
+          <div class="app-launcher-card" data-app="Settings">
+            <div class="app-squircle-icon settings-gradient">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+              </svg>
+            </div>
+            <span class="app-name">Settings</span>
+          </div>
+        </div>
+
+        <h3 class="section-label mt-24">Active Workstation Windows</h3>
+        <div class="active-windows-container" id="activeWindowsList">
+          <div class="window-item-card">
+            <span class="process-indicator active"></span>
+            <span class="process-name">Beatz Control (Active Windows Companion)</span>
+            <span class="process-id">Current Process</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═════════════════════════════════════════════════════════════════
+           TAB 4: ACTIVITY LOGS (DIAGNOSTIC STREAM)
+           ═════════════════════════════════════════════════════════════════ -->
+      <section class="fluent-page" id="pane-logs">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">Activity Logs</h1>
+            <p class="page-subtitle">Real-time background service and WebSocket IPC telemetry events</p>
+          </div>
+          <button class="fluent-btn-standard" id="btnClearLogs">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"/>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+            </svg>
+            <span>Clear Logs</span>
+          </button>
+        </div>
+
+        <div class="logs-console-card">
+          <div class="console-body" id="consoleBody">
+            <div class="log-line info">
+              <span class="log-time">[Init]</span>
+              <span class="log-text">Beatz Control UI initialized. Connecting to loopback IPC...</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═════════════════════════════════════════════════════════════════
+           TAB 5: SETTINGS
+           ═════════════════════════════════════════════════════════════════ -->
+      <section class="fluent-page" id="pane-settings">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">Settings &amp; Preferences</h1>
+            <p class="page-subtitle">Manage startup, tray persistence, and cloud relay networking</p>
+          </div>
+        </div>
+
+        <div class="settings-list-card">
+          <!-- Item 1: Cloud Relay -->
+          <div class="setting-entry">
+            <div class="setting-text">
+              <span class="setting-name">Cloud Relay Endpoint</span>
+              <span class="setting-hint">Worldwide connection relay when away from local Wi-Fi</span>
+            </div>
+            <input type="text" class="fluent-text-input setting-input-box" value="https://backend-n4yg.onrender.com" readonly>
+          </div>
+
+          <!-- Item 2: Startup -->
+          <div class="setting-entry">
+            <div class="setting-text">
+              <span class="setting-name">Launch Silently at Windows Startup</span>
+              <span class="setting-hint">Start background service and keep companion in system tray on login</span>
+            </div>
+            <label class="fluent-toggle">
+              <input type="checkbox" checked id="chkAutostart">
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+
+          <!-- Item 3: Close to Tray -->
+          <div class="setting-entry">
+            <div class="setting-text">
+              <span class="setting-name">Close Button Minimizes to System Tray</span>
+              <span class="setting-hint">Closing dashboard window keeps background service and notifications active</span>
+            </div>
+            <label class="fluent-toggle">
+              <input type="checkbox" checked id="chkCloseTray">
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+
+          <!-- Item 4: Architecture -->
+          <div class="setting-entry">
+            <div class="setting-text">
+              <span class="setting-name">Backend Architecture</span>
+              <span class="setting-hint">Self-contained .NET 8 executable with zero external runtime requirements</span>
+            </div>
+            <span class="badge-accent-ok">Self-Contained (Win-x64)</span>
+          </div>
+
+          <!-- Item 5: Automated Updates -->
+          <div class="setting-entry">
+            <div class="setting-text">
+              <span class="setting-name">Automated Version Control</span>
+              <span class="setting-hint" id="currentVerLabel">Current Version: v2.0.0 • Automated remote patch verification</span>
+            </div>
+            <div class="setting-action-group">
+              <span class="badge-accent-ok" id="updateStatusBadge">v2.0.0 (Latest)</span>
+              <button class="fluent-btn-standard" id="btnCheckUpdatesNow">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="23 4 23 10 17 10"/>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                </svg>
+                <span>Check Now</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
